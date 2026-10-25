@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Talk Today Speaking Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-row">
+      <div class="brand-mark">TT</div>
+      <div>
+        <div class="brand-title">Talk Today <span style="color:var(--accent)">Speaking Portal</span></div>
+        <span class="brand-sub" id="subBrand">Student Portal &amp; Speaking Placement Check</span>
+      </div>
+    </div>
+    <div class="top-right">
+      <span class="conn-pill" id="connPill">Connecting…</span>
+      <button type="button" id="logoutBtn" class="icon-btn hidden" title="Sign out / switch account">🚪 Exit</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- =========================================================================
+         1. THE TT PORTAL LOGIN WALL (Exact ReadTheory / Reading Lab Login)
+         ========================================================================= -->
+    <section id="loginView" class="portal-wrap">
+      <div class="portal-card" id="loginCard">
+        <img src="https://img1.wsimg.com/isteam/ip/e4596783-056a-4255-81a0-601eca83fe81/TALK%20TODAY%20LOGO%20LARGE%20NEW%20TalkToday_Logo_81624.png" alt="Talk Today USA" class="portal-logo">
+
+        <div class="role-tabs" role="tablist" aria-label="Sign-in mode">
+          <button type="button" id="roleStudentBtn" class="role-tab on">🎒 Student</button>
+          <button type="button" id="roleTeacherBtn" class="role-tab">👩‍🏫 Class Teacher</button>
+        </div>
+
+        <div id="portalStudentHead">
+          <h2>Student Portal</h2>
+          <p>Enter your student code and registered guardian email to open your Speaking Check.</p>
+          <div class="portal-notice">
+            <b>📅 Biweekly Progress &amp; Speaking Check</b>
+            <span>Authenticate with your Student Code &amp; Registered Guardian Email. Your microphone stays enabled directly in this secure tab.</span>
+          </div>
+        </div>
+
+        <div id="portalTeacherHead" class="hidden">
+          <h2>Class Teacher Live</h2>
+          <p>Real-time classroom speaking radar &amp; audio review — restricted strictly to each class’s assigned teacher.</p>
+          <div class="portal-notice">
+            <b>🔒 Strict Teacher-of-the-Class Privacy</b>
+            <span>Sign in with your Talk Today teacher profile and registered teacher email to monitor your enrolled cohorts live.</span>
+          </div>
+        </div>
+
+        <div id="loginErr" class="err" aria-live="polite"></div>
+
+        <!-- 4-Stage Progress Bar Animation -->
+        <div id="portalProgBox" class="prog-box">
+          <div class="prog-track"><div id="progBarFill" class="prog-fill"></div></div>
+          <div id="progStageLabel" class="prog-label">Verifying student record...</div>
+        </div>
+
+        <!-- Student Login Form -->
+        <form id="portalForm">
+          <input type="text" id="studentCode" class="portal-input" placeholder="Student code (or jamalmorelli)" autocomplete="off">
+          <input type="email" id="parentEmail" class="portal-input" placeholder="Registered guardian email" autocomplete="username">
+          <button id="loginSubmitBtn" type="submit" class="btn btn-full">Open Speaking Portal &rarr;</button>
+        </form>
+
+        <!-- Optional 6-Digit Email OTP Box -->
+        <div id="otpVerifyBox" class="card hidden" style="margin-top:12px;text-align:left;background:#0b1120">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px">Email Verification Required</div>
+          <p class="sub" style="font-size:12.5px">Request a 6-digit verification code for your registered guardian email.</p>
+          <button type="button" id="btnSendOtp" class="btn btn-ghost btn-full" style="margin-bottom:8px">Send 6-Digit Code</button>
+          <input type="text" id="otpInput" class="portal-input" inputmode="numeric" maxlength="6" placeholder="6-digit code">
+          <button type="button" id="btnVerifyOtp" class="btn btn-ok btn-full">Verify &amp; Enter</button>
+          <div id="otpMsg" class="err"></div>
+        </div>
+
+        <!-- Class Teacher Login Form -->
+        <form id="teacherLoginForm" class="hidden">
+          <select id="teacherNameSelect" class="portal-input" aria-label="Select Teacher Profile">
+            <option value="">Select your Teacher profile...</option>
+          </select>
+          <input type="text" id="teacherEmailInput" class="portal-input" placeholder="Registered teacher email" autocomplete="username">
+          <button id="teacherSubmitBtn" type="submit" class="btn btn-full">Open Live Speaking Radar &rarr;</button>
+        </form>
+
+        <!-- Self-Service Guardian Email Linker & Support Link -->
+        <div id="portalSupportLink">
+          <div class="linker-box">
+            <div style="font-weight:700;color:#7dd3fc;margin-bottom:6px">📧 First time or registered without an email?</div>
+            <a id="emailLinkerBtn" href="https://script.google.com/macros/s/AKfycbwfnk74H39Zcvvvxzub6h7oIn_ALOLuHAqY_ONgjIAbdUVVBHsg_cYpTIUftF7YQyckjg/exec" target="_blank" rel="noopener" class="btn btn-full" style="font-size:12.5px;padding:9px 12px">
+              ✨ Link Guardian Email &amp; Student Code Instantly &rarr;
+            </a>
+          </div>
+          <div style="margin-top:10px;font-size:12.5px">
+            <a href="#" id="showSupportFormLink" style="color:#7dd3fc;text-decoration:none">Having trouble logging in? Contact Administration &rarr;</a>
+          </div>
+        </div>
+
+        <!-- Built-in Support Ticket Form -->
+        <form id="portalSupportForm" class="hidden" style="margin-top:14px;text-align:left">
+          <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Send your details directly to the administration desk:</div>
+          <input type="text" id="supCode" class="portal-input" placeholder="Student code">
+          <input type="text" id="supName" class="portal-input" placeholder="Student full name">
+          <input type="email" id="supEmail" class="portal-input" placeholder="Preferred guardian email">
+          <div id="supMsg" class="err"></div>
+          <button id="supBtn" type="submit" class="btn btn-full">Send to Administration</button>
+          <button id="cancelSupportBtn" type="button" class="btn btn-ghost btn-full" style="margin-top:8px">Cancel</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         2. AUTHENTICATED STUDENT SPEAKING PORTAL & RUNNER
+         ========================================================================= -->
+    <section id="studentPortalView" class="hidden">
+      <!-- Family Sibling Switcher -->
+      <div class="sibling-bar" id="siblingBar">
+        <span style="font-weight:800;font-size:13px">👨‍👩‍👧 Switch Sibling Account:</span>
+        <div id="siblingButtons" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+
+      <!-- Verified Student Identity Banner -->
+      <div class="student-bar">
+        <div>
+          <div class="student-name-row">
+            <span class="student-name" id="dashStudentName">Student Name</span>
+            <span class="student-code" id="dashStudentCode">#0000</span>
+          </div>
+          <div class="student-chips">
+            <span class="student-chip" id="dashClassChip">📚 Class</span>
+            <span class="student-chip" id="dashTeacherChip">👩‍🏫 Teacher</span>
+            <span class="student-chip" id="dashPackChip">🎯 Pack</span>
+            <span class="student-chip" id="dashAgeChip">👶 Group</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="runner-wrap">
+        <div class="steps" id="stepPills">
+          <div class="step-pill on" data-step="ready">1 · Ready</div>
+          <div class="step-pill" data-step="mic">2 · Mic Check</div>
+          <div class="step-pill" data-step="task1">3 · Task 1</div>
+          <div class="step-pill" data-step="task2">4 · Task 2</div>
+          <div class="step-pill" data-step="done">5 · Done</div>
+        </div>
+
+        <!-- STEP 1: Verified Ready Screen -->
+        <section class="card" id="stepReady">
+          <h2>Ready for your Speaking Check</h2>
+          <p class="sub" id="readyIntroText">Your student profile is verified. Confirm your speaking pack below, make sure you are in a quiet spot, and start your microphone check.</p>
+
+          <label for="packSelect">Speaking Pack Level</label>
+          <select id="packSelect">
+            <option value="BEG">Beginner (BEG — Pre-A1 / A1)</option>
+            <option value="INT">Intermediate (INT — A2 / B1)</option>
+            <option value="ADV">Advanced (ADV — B2 / C1)</option>
+          </select>
+          <p class="sub" id="packLockNotice" style="font-size:12.5px;margin-top:-4px"></p>
+
+          <button type="button" class="btn btn-full" id="btnStart">🎤 Start Speaking Check &rarr;</button>
+          <p class="status-line" id="readyStatus"></p>
+
+          <!-- Student-Safe Submission Status History (Strictly NO scores or bands!) -->
+          <div id="studentHistoryCard" class="hidden" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--edge)">
+            <div style="font-size:14px;font-weight:800;margin-bottom:6px">My Submitted Speaking Checks</div>
+            <p class="sub" style="font-size:12.5px;margin-bottom:8px">Talk Today teachers &amp; academic staff review all speaking recordings privately.</p>
+            <div id="studentHistoryList"></div>
+          </div>
+        </section>
+
+        <!-- STEP 2: Microphone Check -->
+        <section class="card hidden" id="stepMic">
+          <h2>Microphone Check</h2>
+          <p class="sub">Speak clearly for about five seconds, listen to your playback, and confirm that you can hear yourself. This check is not scored.</p>
+          <div class="timer" id="micTimer">00:00</div>
+          <p class="status-line" id="micStatus">Starting microphone…</p>
+          <audio id="micPlayback" controls class="hidden"></audio>
+          <div class="btn-row">
+            <button type="button" class="btn btn-full" id="btnMicRecord">Record check again</button>
+            <button type="button" class="btn btn-ghost btn-full hidden" id="btnMicStop">Stop</button>
+          </div>
+          <div class="btn-row hidden" id="micConfirmRow">
+            <button type="button" class="btn btn-ok btn-full" id="btnMicOk">✓ I can hear myself clearly</button>
+            <button type="button" class="btn btn-warn btn-full" id="btnMicRetry">Try again</button>
+          </div>
+        </section>
+
+        <!-- STEP 3 & 4: Speaking Tasks -->
+        <section class="card hidden" id="stepTask">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <h2 id="taskTitle" style="margin:0">Task 1</h2>
+            <span class="chip" id="taskChip">INT</span>
+          </div>
+          <div class="prompt-box" id="taskPrompt"></div>
+          <div class="btn-row">
+            <button type="button" class="btn btn-ghost btn-full" id="btnReadAloud">🔊 Read prompt aloud</button>
+            <button type="button" class="btn btn-ghost btn-full" id="btnStopAloud">⏹ Stop voice</button>
+          </div>
+          <div class="timer prep" id="taskTimer">00:00</div>
+          <p class="status-line" id="taskStatus">Prepare your answer…</p>
+          <audio id="taskPlayback" controls class="hidden"></audio>
+          <div id="taskActionRow" style="margin-top:12px">
+            <button type="button" class="btn btn-full" id="btnStartPrep">Start preparation</button>
+          </div>
+          <div class="hidden" id="taskRecRow" style="margin-top:12px">
+            <button type="button" class="btn btn-danger btn-full" id="btnStopRec"><span class="rec-dot"></span> Stop recording</button>
+          </div>
+          <div class="btn-row hidden" id="taskAfterRow">
+            <button type="button" class="btn btn-warn btn-full" id="btnRerecord">Rerecord once</button>
+            <button type="button" class="btn btn-ok btn-full" id="btnKeepUpload">Keep &amp; upload &rarr;</button>
+          </div>
+        </section>
+
+        <!-- STEP 5: Submission Complete (Scores Strictly Hidden from Students) -->
+        <section class="card hidden" id="stepDone">
+          <div class="banner-ok" id="doneMessage">
+            Your speaking test has been submitted. Talk Today staff will confirm your placement.
+          </div>
+          <p class="sub">Your audio responses have been securely saved for your Talk Today teacher and academic team.</p>
+          <button type="button" class="btn btn-ghost btn-full" id="btnBackToPortal">&larr; Back to My Speaking Portal</button>
+        </section>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         3. CLASS TEACHER / DIRECTOR LIVE SPEAKING RADAR
+         ========================================================================= -->
+    <section id="teacherView" class="hidden">
+      <div class="student-bar" style="background:linear-gradient(135deg,#1e1b4b 0%,#312e81 60%,#0369a1 100%)">
+        <div>
+          <div class="student-name-row">
+            <span class="student-name" id="tchDisplayName">Class Teacher Radar</span>
+            <span class="student-code" id="tchRoleBadge">TEACHER</span>
+          </div>
+          <div class="student-chips">
+            <span class="student-chip" id="tchPolledAt">Live Sync Ready</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" id="tchHideNamesBtn" class="icon-btn">🙈 Hide Names</button>
+          <button type="button" id="tchRefreshBtn" class="icon-btn">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <!-- Teacher Filter & Cohort Controls -->
+      <div class="card" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:end">
+        <div id="tchDirectorWrap" class="hidden">
+          <label for="tchTeacherSelect">Teacher Filter (Director)</label>
+          <select id="tchTeacherSelect" style="margin:0">
+            <option value="ALL">All Teachers</option>
+          </select>
+        </div>
+        <div>
+          <label for="tchClassSelect">Enrolled Class Cohort</label>
+          <select id="tchClassSelect" style="margin:0">
+            <option value="ALL">All My Classes</option>
+          </select>
+        </div>
+        <div>
+          <label for="tchPinPackSelect">Pin Cohort Speaking Pack</label>
+          <select id="tchPinPackSelect" style="margin:0">
+            <option value="AUTO">Auto (Match Cohort Level)</option>
+            <option value="BEG">Pin BEG (Beginner)</option>
+            <option value="INT">Pin INT (Intermediate)</option>
+            <option value="ADV">Pin ADV (Advanced)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-val" id="kpiTotal">0</div><div class="kpi-lbl">Students in Scope</div></div>
+        <div class="kpi-card"><div class="kpi-val" id="kpiOnline">0</div><div class="kpi-lbl">Online Now</div></div>
+        <div class="kpi-card"><div class="kpi-val" id="kpiSubmitted">0</div><div class="kpi-lbl">Submitted</div></div>
+      </div>
+
+      <!-- Live Cohort Matrix -->
+      <div class="card" id="tchTableCard">
+        <h2 style="margin-bottom:12px">Live Student Speaking Status</h2>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Cohort</th>
+                <th>Presence</th>
+                <th>Live Stage</th>
+                <th>Latest Submission</th>
+                <th>Review</th>
+              </tr>
+            </thead>
+            <tbody id="tchRosterBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Teacher Private Attempt Audio & Rubric Inspector -->
+      <div class="card hidden" id="tchInspectCard">
+        <button type="button" id="tchBackBtn" class="btn btn-ghost" style="margin-bottom:12px">&larr; Back to Live Class Radar</button>
+        <div id="tchInspectMeta"></div>
+        <div id="tchInspectResponses" style="margin-top:14px"></div>
+        <div id="tchInspectScores" style="margin-top:14px"></div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--edge)">
+          <h3 style="margin:0 0 10px;font-size:16px">Teacher / Staff Review Decision</h3>
+          <label for="tchFinalBand">Final Speaking Band</label>
+          <select id="tchFinalBand">
+            <option value="">— select band —</option>
+            <option>below_A1</option>
+            <option>emerging_A1</option>
+            <option>stable_A1</option>
+            <option>possible_A2</option>
+            <option>below_A2</option>
+            <option>A2</option>
+            <option>B1</option>
+            <option>strong_B1_or_possible_B2</option>
+            <option>below_B1</option>
+            <option>B2</option>
+            <option>possible_C1</option>
+            <option>RETEST</option>
+            <option>AUDIO_UNUSABLE</option>
+          </select>
+          <label for="tchNotes">Teacher Review Notes</label>
+          <textarea id="tchNotes" placeholder="Notes on pronunciation, fluency, or placement confirmation..."></textarea>
+          <div style="display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="tchChkUnusable" style="width:auto;margin:0"> Audio unusable</label>
+            <label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="tchChkRetest" style="width:auto;margin:0"> Request retest</label>
+          </div>
+          <button type="button" id="tchSaveReviewBtn" class="btn btn-ok btn-full">Save Review Decision</button>
+          <p class="status-line" id="tchSaveStatus"></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

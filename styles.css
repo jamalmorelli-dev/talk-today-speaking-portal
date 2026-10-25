@@ -1,0 +1,620 @@
+:root {
+  --bg: #0b1120;
+  --panel: #152036;
+  --panel2: #1e2d4a;
+  --edge: rgba(148, 163, 184, 0.2);
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+  --accent2: #0ea5e9;
+  --accentInk: #082f49;
+  --ok: #22c55e;
+  --okInk: #052e16;
+  --warn: #fbbf24;
+  --warnInk: #422006;
+  --bad: #f87171;
+  --radius: 16px;
+  --shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  background: radial-gradient(circle at 20% 0%, #172554 0%, #0b1120 55%);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.hidden { display: none !important; }
+
+/* Top Header Bar (Matches ReadTheory / Reading Lab) */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px clamp(16px, 4vw, 32px);
+  background: rgba(11, 17, 32, 0.88);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--edge);
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #38bdf8, #22c55e);
+  color: #0b1120;
+  font-weight: 900;
+  font-size: 15px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.25);
+}
+
+.brand-title {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.brand-sub {
+  font-size: 12px;
+  color: var(--muted);
+  display: block;
+}
+
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conn-pill {
+  font-size: 11.5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--panel2);
+  border: 1px solid var(--edge);
+  color: var(--muted);
+  font-weight: 600;
+}
+.conn-pill.ready {
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.icon-btn {
+  border: 1px solid var(--edge);
+  background: var(--panel2);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 13px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.icon-btn:hover { filter: brightness(1.1); }
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px clamp(14px, 4vw, 28px) 72px;
+}
+
+/* =========================================================================
+   1. THE TT PORTAL LOGIN WALL (Exact ReadTheory / Reading Lab Pattern)
+   ========================================================================= */
+.portal-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 130px);
+  padding: 16px 0;
+}
+
+.portal-card {
+  background: linear-gradient(180deg, #162238 0%, #111b2e 100%);
+  border: 1.5px solid rgba(56, 189, 248, 0.24);
+  border-radius: 22px;
+  padding: clamp(24px, 5vw, 38px);
+  max-width: 450px;
+  width: 100%;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.portal-logo {
+  width: 148px;
+  max-width: 100%;
+  height: auto;
+  margin-bottom: 14px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 8px 14px;
+  border-radius: 12px;
+}
+
+.role-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: #0b1120;
+  padding: 5px;
+  border-radius: 12px;
+  border: 1px solid var(--edge);
+  margin-bottom: 18px;
+}
+
+.role-tab {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 9px 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.role-tab.on {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: var(--accentInk);
+  box-shadow: 0 3px 10px rgba(56, 189, 248, 0.25);
+}
+
+.portal-card h2 {
+  font-size: 23px;
+  font-weight: 800;
+  color: var(--accent);
+  margin: 0 0 6px;
+}
+
+.portal-card p {
+  font-size: 13.8px;
+  color: var(--muted);
+  margin: 0 0 14px;
+  line-height: 1.45;
+}
+
+.portal-notice {
+  background: rgba(14, 165, 233, 0.11);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  padding: 10px 13px;
+  margin: 0 0 16px;
+  text-align: left;
+  font-size: 12.2px;
+  line-height: 1.45;
+}
+.portal-notice b {
+  display: block;
+  color: #7dd3fc;
+  margin-bottom: 3px;
+}
+.portal-notice span {
+  color: #cbd5e1;
+}
+
+.portal-input, select, textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 11px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: #0b1120;
+  color: var(--text);
+  font-size: 15px;
+  margin-bottom: 11px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.portal-input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+}
+
+.err {
+  color: var(--bad);
+  min-height: 18px;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 6px 0 10px;
+}
+
+/* 4-Stage Progress Bar */
+.prog-box {
+  display: none;
+  margin: 8px 0 14px;
+  text-align: left;
+}
+.prog-box.active { display: block; }
+.prog-track {
+  height: 7px;
+  background: #0b1120;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+}
+.prog-fill {
+  height: 100%;
+  width: 20%;
+  background: linear-gradient(90deg, var(--accent), var(--ok));
+  transition: width 0.35s ease;
+}
+.prog-label {
+  font-size: 12px;
+  color: #7dd3fc;
+  margin-top: 5px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.linker-box {
+  margin-top: 16px;
+  padding: 11px 12px;
+  background: rgba(14, 165, 233, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.24);
+  border-radius: 12px;
+  font-size: 12.5px;
+}
+
+/* Buttons */
+.btn {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 18px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  text-decoration: none;
+  transition: transform 0.1s ease, filter 0.15s;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: var(--accentInk);
+}
+.btn:hover { filter: brightness(1.07); }
+.btn:active { transform: scale(0.985); }
+.btn:disabled { opacity: 0.48; cursor: not-allowed; transform: none; }
+
+.btn-ok { background: linear-gradient(135deg, #22c55e, #16a34a); color: var(--okInk); }
+.btn-warn { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: var(--warnInk); }
+.btn-danger { background: linear-gradient(135deg, #dc2626, #991b1b); color: #fee2e2; }
+.btn-ghost {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--edge);
+}
+
+.btn-full { width: 100%; }
+.btn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+@media (max-width: 540px) {
+  .btn-row { grid-template-columns: 1fr; }
+}
+
+/* =========================================================================
+   2. AUTHENTICATED STUDENT IDENTITY BANNER & SIBLING SWITCHER
+   ========================================================================= */
+.sibling-bar {
+  display: none;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1.5px solid rgba(56, 189, 248, 0.32);
+  border-radius: 14px;
+  padding: 11px 16px;
+  margin-bottom: 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sibling-bar.visible { display: flex; }
+
+.sibling-btn {
+  padding: 6px 13px;
+  font-size: 12.5px;
+  font-weight: 800;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.sibling-btn.active {
+  background: var(--accent);
+  color: var(--accentInk);
+  border-color: var(--accent);
+}
+
+.student-bar {
+  background: linear-gradient(135deg, #0c4a6e 0%, #075985 55%, #0369a1 100%);
+  border: 1px solid rgba(125, 211, 252, 0.32);
+  border-radius: 16px;
+  padding: 18px 22px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.student-name-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.student-name {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.student-code {
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.student-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.student-chip {
+  background: rgba(11, 17, 32, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 4px 10px;
+  border-radius: 7px;
+  font-size: 12.2px;
+  font-weight: 600;
+}
+
+/* =========================================================================
+   3. SPEAKING TEST RUNNER CARDS
+   ========================================================================= */
+.runner-wrap {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.steps {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.step-pill {
+  flex: 1;
+  min-width: 78px;
+  text-align: center;
+  padding: 8px 6px;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--edge);
+}
+.step-pill.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(56, 189, 248, 0.1);
+}
+.step-pill.done {
+  border-color: var(--ok);
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  padding: 22px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+
+.card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 13.8px;
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+
+label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.prompt-box {
+  font-size: 18px;
+  line-height: 1.5;
+  background: #0b1120;
+  border: 1px solid var(--edge);
+  border-left: 4px solid var(--accent);
+  padding: 16px 18px;
+  border-radius: 12px;
+  margin: 14px 0;
+}
+
+.timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 36px;
+  font-weight: 800;
+  text-align: center;
+  margin: 14px 0;
+  letter-spacing: 0.04em;
+}
+.timer.prep { color: var(--warn); }
+.timer.live { color: var(--bad); animation: pulse 1s infinite; }
+
+@keyframes pulse { 50% { opacity: 0.6; } }
+
+.rec-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fecaca;
+  display: inline-block;
+  box-shadow: 0 0 0 0 rgba(254, 202, 202, 0.7);
+  animation: ping 1.2s infinite;
+}
+@keyframes ping {
+  70% { box-shadow: 0 0 0 9px rgba(254, 202, 202, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(254, 202, 202, 0); }
+}
+
+.status-line {
+  font-size: 13.5px;
+  color: var(--muted);
+  text-align: center;
+  min-height: 20px;
+  margin: 8px 0;
+}
+
+audio {
+  width: 100%;
+  margin: 10px 0;
+}
+
+.banner-ok {
+  background: rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #bbf7d0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.chip {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #0b1120;
+  border: 1px solid var(--edge);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.chip.live { color: #86efac; border-color: rgba(34, 197, 94, 0.4); }
+.chip.idle { color: #fde68a; border-color: rgba(251, 191, 36, 0.4); }
+.chip.offline { color: var(--muted); }
+
+/* History List */
+.history-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0b1120;
+  border: 1px solid var(--edge);
+  margin-top: 8px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+/* =========================================================================
+   4. CLASS TEACHER LIVE RADAR
+   ========================================================================= */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.kpi-card {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 14px;
+  padding: 14px 16px;
+  text-align: center;
+}
+.kpi-val {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--accent);
+}
+.kpi-lbl {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+th, td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--edge);
+  vertical-align: middle;
+}
+th {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%) translateY(140%);
+  background: #0b1120;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: var(--text);
+  padding: 12px 18px;
+  border-radius: 12px;
+  z-index: 90;
+  transition: transform 0.2s ease;
+  max-width: 90vw;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.bad { border-color: var(--bad); color: #fecaca; }

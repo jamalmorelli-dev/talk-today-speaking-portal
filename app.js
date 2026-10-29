@@ -41,6 +41,7 @@ const bridgeState = {
   token: 'spe_' + Math.random().toString(36).slice(2) + Date.now().toString(36),
   ready: false,
   iframe: null,
+  win: null,
   readyWaiters: [],
   pending: new Map(),
   seq: 0
@@ -59,7 +60,7 @@ function ensureBridgeReady() {
     setConnPill('ready', '🔒 Direct Lab Ready');
     return Promise.resolve();
   }
-  if (bridgeState.ready && bridgeState.iframe && bridgeState.iframe.contentWindow) {
+  if (bridgeState.ready && bridgeState.win) {
     return Promise.resolve();
   }
   return new Promise((resolve, reject) => {
@@ -73,13 +74,20 @@ function mountBridgeIframe() {
   if (!holder || !SPE_CFG.appsScriptWebAppUrl) return;
   clearEl(holder);
   bridgeState.ready = false;
+  bridgeState.win = null;
   setConnPill('busy', 'Connecting Lab…');
   const ifr = document.createElement('iframe');
   const sep = SPE_CFG.appsScriptWebAppUrl.includes('?') ? '&' : '?';
   ifr.src = SPE_CFG.appsScriptWebAppUrl + sep + 'page=bridge&origin=' +
     encodeURIComponent(window.location.origin) + '&token=' + encodeURIComponent(bridgeState.token);
-  ifr.style.display = 'none';
+  ifr.tabIndex = -1;
   ifr.setAttribute('aria-hidden', 'true');
+  ifr.style.position = 'fixed';
+  ifr.style.width = '1px';
+  ifr.style.height = '1px';
+  ifr.style.opacity = '0';
+  ifr.style.pointerEvents = 'none';
+  ifr.style.border = '0';
   holder.appendChild(ifr);
   bridgeState.iframe = ifr;
 
@@ -87,6 +95,7 @@ function mountBridgeIframe() {
     if (!bridgeState.ready && bridgeState.readyWaiters.length) {
       setConnPill('err', 'Retrying Bridge…');
       bridgeState.iframe = null;
+      bridgeState.win = null;
       mountBridgeIframe();
     }
   }, 15000);
@@ -96,6 +105,7 @@ window.addEventListener('message', ev => {
   const d = ev && ev.data;
   if (!d || d.token !== bridgeState.token) return;
   if (d.type === 'SPE_BRIDGE_READY') {
+    bridgeState.win = ev.source;
     bridgeState.ready = true;
     setConnPill('ready', '🎙️ Mic & AI Ready');
     const waiters = bridgeState.readyWaiters.splice(0);
@@ -103,6 +113,7 @@ window.addEventListener('message', ev => {
     return;
   }
   if (d.type === 'SPE_GAS_RESULT') {
+    if (bridgeState.win && ev.source !== bridgeState.win) return;
     const item = bridgeState.pending.get(d.id);
     if (!item) return;
     bridgeState.pending.delete(d.id);
@@ -148,7 +159,7 @@ async function rpc(fnName, ...args) {
     }, timeoutMs);
 
     bridgeState.pending.set(id, { resolve, reject, timer });
-    bridgeState.iframe.contentWindow.postMessage({
+    bridgeState.win.postMessage({
       type: 'SPE_GAS_CALL',
       token: bridgeState.token,
       id,

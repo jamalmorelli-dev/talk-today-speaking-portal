@@ -1054,6 +1054,9 @@ h2 { font-size: 20px; letter-spacing: -.01em; margin: 0 0 12px; }
 .rp-role-assign span { font-size: 12px; font-weight: 700; padding: 4px 9px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--edge); }
 .rp-role-assign span.human { border-color: var(--accent); color: var(--accent); }
 .rp-role-assign span.off { opacity: .45; text-decoration: line-through; }
+.rp-sc-mini { display: inline-flex; gap: 4px; padding: 3px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--edge); }
+.rp-sc-btn { border: 0; background: transparent; color: var(--muted); border-radius: 9px; padding: 6px 11px; font-weight: 800; font-size: 12.5px; cursor: pointer; }
+.rp-sc-btn:hover { color: var(--text); }
 .rp-scaffold-seg button.on, .rp-sc-btn.on { background: var(--accent); color: var(--accentInk, #04211d); border-color: transparent; }
 
 .rp-stage-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }

@@ -1,345 +1,1145 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark" data-font="serif">
 <head>
-  <base target="_top">
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Talk Today Speaking Portal</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230ea5e9'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-weight='800' font-size='28' fill='white'%3ETT%3C/text%3E%3C/svg%3E">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Talk Today Speaking Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand-row">
-      <div class="brand-mark">TT</div>
+
+<!-- TOP BAR -->
+<header class="top">
+  <div class="brand">
+    <div class="mark">🎙️</div>
+    <div>
+      <div style="font-size:15px;letter-spacing:-.01em">Talk Today <span style="color:var(--accent)">Speaking Lab</span></div>
+      <small id="subBrand">Student Portal &amp; AI Speaking Coach</small>
+    </div>
+  </div>
+  <div class="topRight">
+    <div class="conn-pill" id="connPill"><span class="pulse-dot"></span><span id="connText">Connecting…</span></div>
+    <div class="chip hidden" id="ptsChip">✨ <span id="ptsVal">0</span> KP</div>
+    <div class="chip hidden" id="streakChip">🔥 <span id="streakVal">0</span>d</div>
+    <div class="chip hidden" id="lvlChip">🎙️ <span id="lvlVal">--</span></div>
+    <button id="settingsBtn" class="iconBtn" title="Reading &amp; Audio Comfort Settings">⚙️</button>
+    <button id="logoutBtn" class="iconBtn hidden" title="Sign out / switch account">🚪 Exit</button>
+  </div>
+</header>
+
+<main>
+  <!-- =========================================================================
+       1. THE TT PORTAL LOGIN WALL (STUDENT + CLASS TEACHER)
+       ========================================================================= -->
+  <section id="loginView" class="portal-wrap">
+    <div class="portal-card" id="loginCard">
+      <img src="https://img1.wsimg.com/isteam/ip/e4596783-056a-4255-81a0-601eca83fe81/TALK%20TODAY%20LOGO%20LARGE%20NEW%20TalkToday_Logo_81624.png" alt="Talk Today Logo" class="portal-logo">
+
+      <div class="role-tabs" role="tablist" aria-label="Sign-in mode">
+        <button type="button" id="roleStudentBtn" class="role-tab on">🎒 Student</button>
+        <button type="button" id="roleTeacherBtn" class="role-tab">👩‍🏫 Class Teacher</button>
+      </div>
+
+      <div id="portalStudentWrap">
+        <h2>Student Speaking Lab</h2>
+        <p>Enter your student code and registered guardian email to unlock your 80 Speaking Missions, AI Speaking Coach, and Official Biweekly Check.</p>
+
+        <div class="portal-notice">
+          <b>🎙️ Daily AI Speaking Practice + Biweekly Progress Check</b>
+          <span>Practice story speaking missions anytime for instant WPM &amp; vocabulary coaching, or complete your Official 2-Task Class Check.</span>
+        </div>
+      </div>
+
+      <div id="portalTeacherHead" class="hidden">
+        <h2>Class Teacher Live</h2>
+        <p>Real-time Socrative speaking progress radar, Breakout Rooms, Cooperative Jigsaws &amp; Placement Audio Review.</p>
+
+        <div class="portal-notice">
+          <b>🔒 Strict Teacher-of-the-Class Privacy</b>
+          <span>Sign in with your Talk Today teacher profile and registered teacher email to monitor your own enrolled cohorts live.</span>
+        </div>
+      </div>
+
+      <div id="loginErr" class="err"></div>
+
+      <!-- 4-Stage Progress Animation -->
+      <div id="portalProgBox" class="prog-box">
+        <div class="prog-track"><div id="progBarFill" class="prog-fill"></div></div>
+        <div id="progStageLabel" class="prog-label">Verifying student record...</div>
+      </div>
+
+      <form id="portalForm">
+        <input type="text" id="studentCode" class="portal-input" placeholder="Student code (or jamalmorelli)" autocomplete="off">
+        <input type="email" id="parentEmail" class="portal-input" placeholder="Registered guardian email" autocomplete="username">
+        <button id="loginSubmitBtn" type="submit" class="btn" style="width:100%">Open Speaking Lab →</button>
+      </form>
+
+      <!-- Optional 6-Digit Email Verification Box -->
+      <div id="otpVerifyBox" class="hidden" style="margin-top:12px;text-align:left">
+        <div id="otpInfoMsg" class="portal-notice" style="margin-bottom:10px"></div>
+        <input type="text" id="otpCodeInput" class="portal-input" placeholder="6-digit verification code" maxlength="6" autocomplete="one-time-code">
+        <button id="verifyOtpBtn" type="button" class="btn" style="width:100%">Verify &amp; Open Speaking Lab →</button>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="resendOtpBtn" type="button" class="btn ghost" style="flex:1;font-size:12.5px">Resend Code</button>
+          <button id="cancelOtpBtn" type="button" class="btn ghost" style="flex:1;font-size:12.5px">Back</button>
+        </div>
+      </div>
+
+      <form id="teacherLoginForm" class="hidden">
+        <select id="teacherNameSelect" class="portal-input" aria-label="Select Teacher Profile">
+          <option value="">Select your Teacher profile...</option>
+        </select>
+        <input type="text" id="teacherEmailInput" class="portal-input" placeholder="Registered teacher email" autocomplete="username">
+        <button id="teacherSubmitBtn" type="submit" class="btn" style="width:100%">Open Live Classroom Radar →</button>
+      </form>
+
+      <div id="portalSupportLink" style="margin-top:16px;font-size:12.5px">
+        <div style="margin-bottom:10px;padding:10px;background:color-mix(in srgb,var(--accent2) 10%,transparent);border:1px solid color-mix(in srgb,var(--accent2) 25%,transparent);border-radius:10px">
+          <div style="font-weight:700;color:var(--accent2);margin-bottom:4px">📧 First time or registered without an email?</div>
+          <a id="emailLinkerBtn" href="https://script.google.com/macros/s/AKfycbwfnk74H39Zcvvvxzub6h7oIn_ALOLuHAqY_ONgjIAbdUVVBHsg_cYpTIUftF7YQyckjg/exec" target="_blank" rel="noopener" class="btn" style="font-size:12px;padding:8px 12px;width:100%">
+            ✨ Link Guardian Email &amp; Student Code Instantly &rarr;
+          </a>
+        </div>
+        <a href="#" id="showSupportFormLink" style="color:var(--accent2);text-decoration:none">Having trouble logging in? Contact Administration &rarr;</a>
+      </div>
+
+      <!-- Support Ticket Form -->
+      <form id="portalSupportForm" class="hidden" style="margin-top:14px;text-align:left">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Send your details directly to the administration desk:</div>
+        <input type="text" id="supCode" class="portal-input" placeholder="Student code">
+        <input type="text" id="supName" class="portal-input" placeholder="Student full name">
+        <input type="email" id="supEmail" class="portal-input" placeholder="Preferred guardian email">
+        <div id="supMsg" class="err"></div>
+        <button id="supBtn" type="submit" class="btn" style="width:100%">Send to Administration</button>
+        <button id="cancelSupportBtn" type="button" class="btn ghost" style="width:100%;margin-top:8px">Cancel</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- LOADING SPINNER -->
+  <section id="loadingView" class="hidden" style="text-align:center;padding:80px 20px">
+    <div style="font-size:40px;margin-bottom:14px">🎙️</div>
+    <div id="loadingText" style="font-size:18px;font-weight:700">Loading your Speaking Lab...</div>
+  </section>
+
+  <!-- =========================================================================
+       2. DASHBOARD VIEW (PERSONALIZED, GAMIFIED & COURSEBOOK-ALIGNED)
+       ========================================================================= -->
+  <section id="dashboardView" class="hidden">
+    <!-- Sibling Switcher Bar -->
+    <div class="sibling-bar" id="siblingBar">
+      <span style="font-weight:800;font-size:13px">👨‍👩‍👧 Switch Sibling Account:</span>
+      <div id="siblingButtons" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    </div>
+
+    <!-- Tailored Student Identity Banner -->
+    <div class="student-bar">
+      <div class="student-info">
+        <div class="student-name-row">
+          <span class="student-name" id="dashStudentName">Student Name</span>
+          <span class="student-code" id="dashStudentCode">#0000</span>
+        </div>
+        <div class="student-chips">
+          <span class="student-chip" id="dashClassChip">📚 Class</span>
+          <span class="student-chip" id="dashTeacherChip">👩‍🏫 Teacher</span>
+          <span class="student-chip" id="dashLevelChip">🎯 Speaking Level</span>
+          <span class="student-chip" id="dashAgeChip">👥 Group</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div id="unlockNotice" class="chip" style="background:var(--panel2)">0/3 mastered to unlock next level</div>
+      </div>
+    </div>
+
+    <!-- Daily Speaking Goal Bar -->
+    <div class="goal-card">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:22px">🎙️</span>
+        <div>
+          <div style="font-size:14px;font-weight:800">Daily Speaking Goal</div>
+          <div class="muted" id="goalStatusText" style="font-size:12.5px">Record 4 spoken responses today</div>
+        </div>
+      </div>
+      <div class="goal-bar-wrap">
+        <div class="goal-bar"><i id="goalFill"></i></div>
+      </div>
+      <div id="goalFraction" style="font-weight:800;font-size:14px">0 / 4</div>
+    </div>
+
+    <!-- Gamification Row: Speaker Rank, Class Leaderboard, Achievements, Spoken Pace -->
+    <div class="game-grid">
+      <div class="game-tile">
+        <div class="title">Speaker Rank</div>
+        <div class="val" id="rankVal">🌱 New Voice</div>
+        <div class="bar" style="margin-top:4px"><i id="rankFill"></i></div>
+        <div class="sub" id="rankNextText">60 KP to Clear Speaker</div>
+      </div>
+
+      <div class="game-tile">
+        <div class="title">Class Weekly Standings</div>
+        <div id="leaderboardBox" class="leaderboard-list"></div>
+      </div>
+
+      <div class="game-tile clickable" id="badgesTile" title="Click to inspect all 12 Speaking Achievements">
+        <div class="title">Speaking Achievements 🔎</div>
+        <div class="val" id="badgesCountVal">0 / 12</div>
+        <div class="sub" id="badgeRecentText">Click to view all 12 speaking badges</div>
+      </div>
+
+      <div class="game-tile">
+        <div class="title">Spoken Fluency Pace</div>
+        <div class="val" id="paceVal">-- WPM</div>
+        <div class="sub" id="paceSubText">Record a speaking task to measure WPM</div>
+      </div>
+    </div>
+
+    <!-- Official 2-Task Speaking Placement & Biweekly Progress Check Banner -->
+    <div class="placement-launch-card" id="placementLaunchCard">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div>
+          <div class="eyebrow">🎯 OFFICIAL CLASSROOM SPEAKING CHECK</div>
+          <div style="font-size:17px;font-weight:800;margin-top:2px">2-Task Speaking Placement &amp; Biweekly Progress Check</div>
+          <div class="muted" style="font-size:13px;margin-top:2px" id="placementSubSummary">Record 2 formal speaking tasks for your Talk Today teacher’s biweekly check.</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span class="chip" id="placementPackBadge">Pack: INT</span>
+          <button type="button" id="togglePlacementHistBtn" class="btn ghost hidden" style="padding:8px 13px;font-size:12.5px">📋 Past Submissions (0)</button>
+          <button type="button" id="openPlacementBtn" class="btn" style="padding:9px 16px;font-size:13.5px">🎙️ Start Official 2-Task Check →</button>
+        </div>
+      </div>
+      <div id="placementHistoryBox" class="placement-hist-list hidden"></div>
+    </div>
+
+    <!-- Stats & Speaking Skills Split -->
+    <div class="split">
+      <div class="panel">
+        <h2>Speaking Skills Profile</h2>
+        <div id="skillsList"></div>
+        <div id="skillTipBox" class="tip hidden"></div>
+      </div>
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <h2 style="margin:0">Your Speaking Progress</h2>
+          <span class="chip" id="statVocabChip" style="font-size:12px">🔤 0 Target Words Activated</span>
+        </div>
+        <div class="tiles" style="margin:0 0 16px">
+          <div class="tile"><div class="v" id="statCompleted">0</div><div class="l">Missions Done</div></div>
+          <div class="tile"><div class="v" id="statAccuracy">0%</div><div class="l">Mastery Rate</div></div>
+          <div class="tile"><div class="v" id="statAnswers">0</div><div class="l">Recordings</div></div>
+          <div class="tile"><div class="v" id="statStreak">0d</div><div class="l">Streak</div></div>
+        </div>
+        <div id="ownerBanner" class="hidden" style="background:var(--badBg);color:var(--bad);padding:12px 14px;border-radius:12px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <span>👑 Admin / Staff Preview Mode: All 80 missions &amp; levels unlocked.</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" id="ownerOpenBreakoutBtn" class="jigsaw-cta-btn">🚪 Breakout Rooms &amp; Group Assign</button>
+            <button type="button" id="ownerOpenJigsawBtn" class="jigsaw-cta-btn">🧩 Create / Manage Speaking Jigsaw</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Student Breakout Room Banner -->
+    <div id="studentBreakoutBanner" class="student-breakout-banner hidden"></div>
+
+    <!-- Live Class Speaking Jigsaw Banner -->
+    <div id="jigsawDashSection" class="jigsaw-dash-box hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div>
+          <div class="eyebrow">🧩 Cooperative Class Speaking Mission</div>
+          <h2 style="margin:4px 0 0">Live Speaking Jigsaw Activities</h2>
+        </div>
+        <span class="chip">Master Expert Part · Record Voice Clues · Solve Together</span>
+      </div>
+      <div id="jigsawDashGrid" class="jigsaw-card-grid"></div>
+    </div>
+
+    <!-- Level Filter Tabs, Categories & Talk Today Coursebook Unit Companion -->
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin:22px 0 8px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">Available Speaking Missions</h2>
+        <span class="chip" id="lessonsCountSummary" style="font-size:12px;font-weight:800"></span>
+      </div>
+      <div class="filters" id="levelTabs"></div>
+    </div>
+
+    <div class="cat-filter-wrap" id="catalogExplorerWrap">
+      <div class="cat-pills-row" id="categoryTabs" role="tablist" aria-label="Mission Categories"></div>
+      <div class="library-search-row">
+        <input type="search" id="lessonSearchInput" class="library-search-input" placeholder="🔍 Search speaking missions, Science topics, books (Super Minds, Shining Lights...), units, or target vocabulary..." aria-label="Search speaking missions and unit vocabulary">
+        <button type="button" id="toggleBookExplorerBtn" class="book-explorer-toggle">📘 Talk Today Coursebook &amp; Unit Vocab</button>
+      </div>
+      <div id="bookExplorerBar" class="book-explorer-box hidden">
+        <div class="book-explorer-head">
+          <div>
+            <div class="book-explorer-title">📚 Talk Today USA Coursebook &amp; Unit Speaking Companion</div>
+            <div class="book-explorer-sub">Pick your class book &amp; unit (Super Minds, Shining Lights, Gateway, Wider World, Our World, Look, Interchange) to practice speaking with your exact unit words!</div>
+          </div>
+          <button type="button" id="resetBookFilterBtn" class="story-media-toggle">Reset Filter</button>
+        </div>
+        <div class="book-series-pills" id="bookSeriesPills"></div>
+        <div class="book-unit-row">
+          <label for="bookUnitSelect" class="muted" style="font-size:12.5px;font-weight:800">🎯 Select Class Unit:</label>
+          <select id="bookUnitSelect" class="book-unit-select" aria-label="Select Coursebook Unit"></select>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid" id="lessonsGrid"></div>
+  </section>
+
+  <!-- =========================================================================
+       3. GUIDED SPEAKING MISSION & AI SPEAKING COACH VIEW
+       ========================================================================= -->
+  <section id="exerciseView" class="hidden">
+    <div class="lessonHead">
+      <button id="backToDashBtn" class="btn ghost">← Back to Missions</button>
+      <div class="meta" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span class="lvl" id="exCefr">A2</span>
+        <span class="muted" id="exTopic" style="font-weight:700;font-size:13px">topic</span>
+      </div>
+    </div>
+
+    <div class="reader">
+      <!-- Left Column: Story Context, HD Media, Neural Voice & Interactive Vocabulary -->
+      <div class="passageCol">
+        <div class="panel">
+          <h1 id="exTitle" style="font-size:22px;margin:0 0 4px">Title</h1>
+          <div id="exObjective" class="muted" style="font-size:13px;margin-bottom:10px"></div>
+          <div id="exMediaShowcase" class="story-showcase hidden"></div>
+          <div class="toolbar">
+            <button id="listenBtn" class="tool">🎙️ Listen (HQ)</button>
+            <button id="speedBtn" class="tool">1.0×</button>
+            <button id="focusBtn" class="tool">🎯 Focus</button>
+            <button id="textBtn" class="tool">Aa</button>
+            <span class="faint" id="wordInfo" style="margin-left:auto;font-size:12.5px;font-weight:600"></span>
+          </div>
+          <div id="exVoiceBar" class="neural-voice-bar hidden"></div>
+          <div id="exUnitVocabBanner" class="unit-vocab-banner hidden"></div>
+          <div id="passage" class="passage"></div>
+          <details style="margin-top:14px"><summary style="cursor:pointer;font-weight:700;font-size:14px">📚 Key Story Vocabulary</summary><div id="vocab" class="vocabList"></div></details>
+        </div>
+      </div>
+
+      <!-- Right Column: Guided Speaking Task, Voice Recorder Studio & AI Speaking Coach -->
+      <div class="qPanel">
+        <div class="panel qPanel" id="qCard">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="dots" id="dots"></div>
+            <span class="skillTag" id="skillTag"></span>
+          </div>
+
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+            <p class="qText" id="qText" style="margin:0;flex:1"></p>
+            <button type="button" id="hearPromptBtn" class="iconBtn" style="flex-shrink:0;font-size:12.5px" title="Listen to speaking prompt">🔊 Prompt</button>
+          </div>
+
+          <!-- Helpful Sentence Starter Frame -->
+          <div id="starterFrameBox" class="starter-box">
+            <div style="flex:1">
+              <strong>🗣️ Helpful Sentence Starter</strong>
+              <span id="starterFrameText"></span>
+            </div>
+            <button type="button" id="hearStarterBtn" class="iconBtn" style="font-size:12px;padding:5px 10px">🔊 Hear</button>
+          </div>
+
+          <!-- Target Unit / Story Words to Activate in Speech -->
+          <div id="targetWordsWrap" class="target-words-box">
+            <div class="target-words-label" id="targetWordsHeader">🎯 Try Using These Target Words When You Speak:</div>
+            <div class="target-words-row" id="targetWordsRow"></div>
+          </div>
+
+          <!-- Top-Level HTTPS Browser Microphone Recorder -->
+          <div id="missionMicBox" class="mic-studio">
+            <div class="mic-top-row">
+              <span class="mic-status"><span class="rec-dot"></span><span id="mRecStatus">Ready to record (aim for 10–45 seconds)</span></span>
+              <span class="mic-timer" id="mRecTimer">0:00</span>
+            </div>
+            <div class="mic-bars" id="mRecBars"></div>
+            <div class="mic-actions">
+              <button type="button" id="mRecStartBtn" class="btn rec-btn">🎙️ Record My Answer</button>
+              <button type="button" id="mRecStopBtn" class="btn stop-btn hidden">⏹ Stop Recording</button>
+              <button type="button" id="mRecPlayBtn" class="iconBtn hidden">▶ Listen Back</button>
+              <button type="button" id="mRecRetryBtn" class="iconBtn hidden">↺ Re-Record</button>
+              <button type="button" id="mRecSubmitBtn" class="btn hidden">✨ Submit to AI Coach →</button>
+            </div>
+            <audio id="mPreviewAudio" controls class="hidden" style="width:100%;height:36px"></audio>
+          </div>
+
+          <!-- AI Speaking Coach Feedback Card -->
+          <div id="feedback"></div>
+
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <button type="button" id="tryAgainTaskBtn" class="btn ghost hidden">🎙️ Record Again to Improve</button>
+            <button type="button" id="nextQBtn" class="btn hidden" style="margin-left:auto">Next Speaking Task →</button>
+          </div>
+        </div>
+        <div id="lessonErr" class="err"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       3B. OFFICIAL 2-TASK SPEAKING PLACEMENT & BIWEEKLY CHECK VIEW
+       ========================================================================= -->
+  <section id="placementView" class="hidden">
+    <div class="t-bar" style="margin-bottom:16px">
+      <div class="t-bar-top">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button type="button" id="backFromPlacementBtn" class="btn ghost" style="padding:7px 13px;font-size:13px">← Back to Speaking Lab</button>
+            <span class="student-name" style="font-size:19px">Official 2-Task Speaking Check</span>
+            <span class="chip" id="plPackChip">Pack: INT</span>
+          </div>
+          <div class="muted" style="font-size:12.5px;margin-top:4px" id="plStudentBadge">Talk Today Biweekly &amp; Placement Speaking Assessment</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pl-stepper">
+      <div class="pl-step on" id="plStep1Pill">1. Ready</div>
+      <div class="pl-step" id="plStep2Pill">2. Mic Check</div>
+      <div class="pl-step" id="plStep3Pill">3. Task 1</div>
+      <div class="pl-step" id="plStep4Pill">4. Task 2</div>
+      <div class="pl-step" id="plStep5Pill">5. Complete</div>
+    </div>
+
+    <div id="plErrBox" class="err" style="margin-bottom:12px"></div>
+
+    <!-- Step 1: Ready Checklist -->
+    <div id="plPaneReady" class="panel" style="max-width:680px;margin:0 auto">
+      <div class="eyebrow">STEP 1 · BEFORE YOU BEGIN</div>
+      <h2 style="margin:6px 0 10px">Official Classroom Speaking Check</h2>
+      <p class="muted" style="margin:0 0 14px">You will complete a quick 5-second microphone check followed by <strong>2 short speaking tasks</strong> (~45–60 seconds each). Your recordings go directly to your Talk Today teacher.</p>
+      <div class="tip" style="margin-bottom:16px">
+        <div>✅ Sit in a quiet spot and hold your microphone close.</div>
+        <div>✅ Speak in full sentences and give examples or reasons.</div>
+        <div>✅ Don’t worry about small mistakes — keep talking naturally!</div>
+      </div>
+      <button type="button" id="plStartBtn" class="btn" style="width:100%">Begin Microphone Check →</button>
+    </div>
+
+    <!-- Step 2: 5-Second Microphone Check -->
+    <div id="plPaneMic" class="panel hidden" style="max-width:680px;margin:0 auto">
+      <div class="eyebrow">STEP 2 · MICROPHONE CHECK</div>
+      <h2 style="margin:6px 0 8px">Test Your Microphone (5 Seconds)</h2>
+      <p class="muted" style="margin:0 0 14px">Click <strong>Record 5s Test</strong> and say: <em>“Hello, my name is … and I am ready for my Talk Today speaking check!”</em></p>
+      <div class="mic-studio" id="plMicStudio">
+        <div class="mic-top-row">
+          <span class="mic-status"><span class="rec-dot"></span><span id="plMicStatus">Click Record 5s Test below</span></span>
+          <span class="mic-timer" id="plMicTimer">0:05</span>
+        </div>
+        <div class="mic-bars" id="plMicBars"></div>
+        <div class="mic-actions">
+          <button type="button" id="plMicRecordBtn" class="btn rec-btn">🎙️ Record 5s Test</button>
+          <button type="button" id="plMicPlayBtn" class="iconBtn hidden">▶ Hear My Voice</button>
+          <button type="button" id="plMicRetryBtn" class="iconBtn hidden">↺ Test Again</button>
+          <button type="button" id="plMicConfirmBtn" class="btn hidden">✅ My Voice Sounds Clear →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3 & 4: Official Task 1 & Task 2 Recording -->
+    <div id="plPaneTask" class="panel hidden" style="max-width:720px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="eyebrow" id="plTaskBadge">TASK 1 OF 2</span>
+        <button type="button" id="plHearPromptBtn" class="iconBtn" style="font-size:12.5px">🔊 Listen to Prompt</button>
+      </div>
+      <h2 id="plTaskTitle" style="margin:6px 0 8px">Speaking Task</h2>
+      <div class="tip" id="plTaskPrompt" style="font-size:16px;line-height:1.55;color:var(--ink);margin-bottom:14px"></div>
+
+      <div style="text-align:center;padding:10px 0">
+        <div class="eyebrow" id="plTaskPhaseLabel">PREPARATION TIME</div>
+        <div class="pl-timer-big" id="plTaskTimer">00:15</div>
+      </div>
+
+      <div class="mic-studio" id="plTaskStudio">
+        <div class="mic-bars" id="plTaskBars"></div>
+        <div class="mic-actions" style="justify-content:center">
+          <button type="button" id="plStartRecNowBtn" class="btn rec-btn">🎙️ Start Recording Now</button>
+          <button type="button" id="plFinishRecBtn" class="btn hidden">✅ Finish &amp; Upload Recording →</button>
+        </div>
+      </div>
+      <div id="plUploadBox" class="muted" style="text-align:center;margin-top:10px;font-weight:700"></div>
+    </div>
+
+    <!-- Step 5: Completed Confirmation (Strict Student Score Secrecy) -->
+    <div id="plPaneDone" class="panel hidden" style="max-width:640px;margin:0 auto;text-align:center">
+      <div style="font-size:46px;margin-bottom:8px">🎉</div>
+      <div class="eyebrow">OFFICIAL CHECK SUBMITTED</div>
+      <h2 id="plDoneTitle" style="margin:8px 0">Great job speaking today!</h2>
+      <p id="plDoneSub" class="muted" style="margin:0 0 18px">Both speaking recordings have been securely saved for your Talk Today teacher to review.</p>
+      <button type="button" id="plReturnDashBtn" class="btn">Return to Speaking Lab Missions →</button>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       4. MISSION SUMMARY VIEW
+       ========================================================================= -->
+  <section id="summaryView" class="hidden" style="text-align:center">
+    <div class="panel" style="max-width:560px;margin:0 auto">
+      <div class="eyebrow">Speaking Mission Complete</div>
+      <h1 id="sumTitle" style="margin:10px 0">Awesome speaking!</h1>
+      <div style="font-size:48px;font-weight:800;color:var(--accent);margin:14px 0" id="sumPercent">100%</div>
+      <p id="sumSubtitle" class="muted" style="margin-bottom:8px"></p>
+      <p id="sumStatsLine" class="chip" style="margin-bottom:20px"></p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button id="sumReviewBtn" class="btn ghost">Review My Recordings</button>
+        <button id="sumDashBtn" class="btn">All Speaking Missions →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       5. SOCRATIVE LIVE TEACHER CLASSROOM RADAR + PLACEMENT REVIEW QUEUE
+       ========================================================================= -->
+  <section id="teacherView" class="hidden">
+    <div class="t-bar">
+      <div class="t-bar-top">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span class="student-name" id="tHeaderName">Teacher Live Radar</span>
+            <span class="live-pill" id="tLiveBadge"><span class="pulse-dot"></span><span id="tLiveBadgeText">LIVE · 5s</span></span>
+            <span class="student-code" id="tScopeChip">My Classes Only</span>
+          </div>
+          <div class="muted" id="tLastSyncText" style="font-size:12.5px;margin-top:4px">Real-time Socrative student presence, spoken WPM &amp; AI Speaking Coach recordings</div>
+        </div>
+        <div class="t-controls">
+          <button type="button" id="tOpenBreakoutBtn" class="jigsaw-cta-btn">🚪 Breakout Rooms &amp; Groups</button>
+          <button type="button" id="tOpenJigsawBtn" class="jigsaw-cta-btn">🧩 Create / Manage Jigsaw</button>
+          <button type="button" id="tTogglePlacementBtn" class="iconBtn" title="Review Official 2-Task Speaking Placement &amp; Biweekly Recordings">🎧 Placement Queue (0)</button>
+          <button type="button" id="tHideNamesBtn" class="iconBtn">🙈 Hide Names</button>
+          <button type="button" id="tHideAnswersBtn" class="iconBtn">🔒 Hide Scores</button>
+          <button type="button" id="tPauseBtn" class="iconBtn">⏸ Pause</button>
+          <button type="button" id="tRefreshBtn" class="iconBtn">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <div class="t-controls" style="justify-content:space-between;border-top:1px solid var(--edge);padding-top:12px">
+        <div class="t-controls">
+          <select id="tTeacherSelect" class="t-select hidden" aria-label="Filter by Teacher"></select>
+          <select id="tClassSelect" class="t-select" aria-label="Select Your Class Cohort"></select>
+          <select id="tLessonSelect" class="t-select" aria-label="Mission Matrix Focus"></select>
+          <select id="tPinPackSelect" class="t-select hidden" aria-label="Pin Official Placement Pack for Class" title="Lock BEG / INT / ADV Placement Check pack for selected class">
+            <option value="">🎯 Pack: Auto-Detect</option>
+            <option value="BEG">Pin Pack: BEG (Starter/A1)</option>
+            <option value="INT">Pin Pack: INT (A2/B1)</option>
+            <option value="ADV">Pin Pack: ADV (B2/C1)</option>
+          </select>
+        </div>
+        <div class="filters" id="tStatusPills" style="margin:0"></div>
+      </div>
+    </div>
+
+    <!-- 4 Classroom Pulse Summary Tiles -->
+    <div class="tiles">
+      <div class="tile">
+        <div class="v" id="tTileOnline">0 / 0</div>
+        <div class="l" id="tTileOnlineSub">🟢 Online in Lab right now</div>
+      </div>
+      <div class="tile">
+        <div class="v" id="tTileReading">0</div>
+        <div class="l">🎧 Reading / Listening now</div>
+      </div>
+      <div class="tile">
+        <div class="v" id="tTileAnswering">0</div>
+        <div class="l">🎙️ Recording Tasks T1–T4</div>
+      </div>
+      <div class="tile">
+        <div class="v" id="tTileAccuracy">--</div>
+        <div class="l" id="tTileAccuracySub">🎯 Class pass rate today</div>
+      </div>
+    </div>
+
+    <!-- Skill Trouble-Spot Alert Banner -->
+    <div id="tTroubleBanner" class="t-alert hidden">
+      <span id="tTroubleText"></span>
+      <span class="chip" id="tTroubleMetric"></span>
+    </div>
+
+    <!-- Pinned Mission Task Breakdown -->
+    <div id="tPinnedBox" class="t-pinned hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="font-weight:800;font-size:15px" id="tPinnedTitle">Pinned Mission</div>
+        <button type="button" id="tUnpinLessonBtn" class="iconBtn" style="font-size:12px;padding:4px 10px">✕ Return to Auto-Follow</button>
+      </div>
+      <div class="t-pinned-grid" id="tPinnedGrid"></div>
+    </div>
+
+    <!-- Collapsible Official 2-Task Speaking Placement & Biweekly Review Queue -->
+    <div id="tPlacementBox" class="pl-queue-box hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <div>
+          <div class="eyebrow">🎧 STAFF-ONLY RUBRIC &amp; AUDIO REVIEW</div>
+          <h2 style="margin:2px 0 0">Official 2-Task Speaking Placement &amp; Biweekly Submissions</h2>
+        </div>
+        <button type="button" id="tClosePlacementBoxBtn" class="iconBtn">✕ Hide Queue</button>
+      </div>
+      <div id="tPlacementList" class="soc-wrap" style="margin-bottom:12px"></div>
+      <div id="tPlacementDetailBox" class="hidden" style="background:var(--panel2);border:1px solid var(--edge);border-radius:14px;padding:16px"></div>
+    </div>
+
+    <!-- Live Socrative Student Speaking Matrix -->
+    <div class="soc-wrap">
+      <table class="soc-table">
+        <thead>
+          <tr>
+            <th>Student</th>
+            <th>Live Location &amp; Activity</th>
+            <th class="qcol">T1</th>
+            <th class="qcol">T2</th>
+            <th class="qcol">T3</th>
+            <th class="qcol">T4</th>
+            <th>Mission / Spoken WPM</th>
+          </tr>
+        </thead>
+        <tbody id="tMatrixBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Click-to-Inspect Live Student Recording & Coach Card -->
+    <div id="tInspectorBox" class="inspector-card hidden"></div>
+  </section>
+
+    <section id="jigsawStudioView" class="hidden">
+    <div class="t-bar">
+      <div class="t-bar-top">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button type="button" id="jStudioBackBtn" class="btn ghost" style="padding:7px 13px;font-size:13px">← Back</button>
+            <span class="student-name">🧩 Speaking Jigsaw Studio</span>
+            <span class="student-code" id="jStudioRoleChip">Teacher Studio</span>
+          </div>
+          <div class="muted" style="font-size:12.5px;margin-top:4px">Author multi-part cooperative Speaking Jigsaws, auto-group students into Home Teams, and monitor live synthesis progress.</div>
+        </div>
+        <div class="j-subtabs" style="margin:0">
+          <button type="button" id="jTabBreakoutBtn" class="j-subtab">🚪 Breakout Rooms &amp; Assign</button>
+          <button type="button" id="jTabCreateBtn" class="j-subtab on">✨ Create / Edit Jigsaw</button>
+          <button type="button" id="jTabListBtn" class="j-subtab">📋 Saved &amp; Live Jigsaws</button>
+          <button type="button" id="jTabLiveBtn" class="j-subtab">📡 Live Team Board</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANE 0: LIVE LOGGED-IN BREAKOUT ROOMS & INTUITIVE GROUP JIGSAW ASSIGNMENT -->
+    <div id="jPaneBreakout" class="hidden">
+      <!-- Step 1: Logged-In Student Pool & 1-Click Breakout Room Builder -->
+      <div class="t-bar">
+        <div class="t-bar-top">
+          <div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span class="eyebrow">STEP 1 · GROUP LOGGED-IN STUDENTS</span>
+              <span class="live-pill"><span class="pulse-dot"></span><span id="brOnlineSummaryText">🟢 0 Logged In Now</span></span>
+            </div>
+            <div class="muted" style="font-size:12.5px;margin-top:3px">Create Breakout Rooms directly from students who are logged in right now (drag &amp; drop, auto-shuffle, or balance by skill), then assign a Speaking Jigsaw &amp; Part A–D roles to any group!</div>
+          </div>
+          <div class="t-controls">
+            <select id="brTeacherSelect" class="t-select hidden" aria-label="Breakout Teacher Scope"></select>
+            <select id="brClassSelect" class="t-select" aria-label="Breakout Class Cohort"></select>
+            <button type="button" id="brRefreshBtn" class="iconBtn">🔄 Sync Live</button>
+          </div>
+        </div>
+
+        <div class="t-controls" style="justify-content:space-between;border-top:1px solid var(--edge);padding-top:12px">
+          <div class="t-controls">
+            <button type="button" id="brFilterOnlineBtn" class="pill on">🟢 Logged In Now (0)</button>
+            <button type="button" id="brFilterAllBtn" class="pill">📚 Include Offline Roster (0)</button>
+          </div>
+          <div class="t-controls">
+            <select id="brSizeSelect" class="t-select" aria-label="Room Sizing">
+              <option value="SIZE_2">👥 Pairs (2 per room)</option>
+              <option value="SIZE_3" selected>👥 Trios (3 per room)</option>
+              <option value="SIZE_4">👥 Quads (4 per room)</option>
+              <option value="ROOMS_2">🚪 2 Breakout Rooms</option>
+              <option value="ROOMS_3">🚪 3 Breakout Rooms</option>
+              <option value="ROOMS_4">🚪 4 Breakout Rooms</option>
+              <option value="ROOMS_5">🚪 5 Breakout Rooms</option>
+              <option value="ROOMS_6">🚪 6 Breakout Rooms</option>
+            </select>
+            <select id="brStrategySelect" class="t-select" aria-label="Grouping Strategy">
+              <option value="SHUFFLE">🎲 Random Shuffle</option>
+              <option value="BALANCED" selected>⚖️ Skill-Balanced (Mix KP)</option>
+              <option value="LEVEL">📊 Same Level Together</option>
+            </select>
+            <button type="button" id="brAutoBuildBtn" class="btn" style="padding:8px 14px;font-size:13px">⚡ Create Breakout Rooms</button>
+            <button type="button" id="brAddRoomBtn" class="iconBtn">➕ Add Room</button>
+            <button type="button" id="brPlaceLateBtn" class="iconBtn" title="Drop newly logged-in Lobby students into the smallest existing rooms">⚡ Place Latecomers</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Intuitive Speaking Jigsaw & Member Role Assignment Bar -->
+      <div class="br-assign-bar">
+        <div class="t-bar-top">
+          <div>
+            <div class="eyebrow">STEP 2 · ASSIGN JIGSAW READING TO GROUP MEMBERS</div>
+            <div style="font-weight:800;font-size:15px;margin-top:2px">Choose a Speaking Jigsaw — each member in a room gets clickable Part A / B / C / [D] role buttons below!</div>
+          </div>
+          <button type="button" id="brGoCreateCustomBtn" class="iconBtn" style="font-size:12.5px">✨ + Author New Custom Jigsaw</button>
+        </div>
+
+        <div class="t-controls" style="justify-content:space-between">
+          <div class="t-controls" style="flex:1">
+            <select id="brJigsawPicker" class="t-select" style="flex:1;max-width:460px" aria-label="Select Speaking Jigsaw to Assign"></select>
+            <select id="brCollabSelect" class="t-select" aria-label="Clue Mode">
+              <option value="CLUE_BOARD">💬 Live Clue-Board</option>
+              <option value="ORAL">🗣️ Classroom Speaking</option>
+            </select>
+            <select id="brPacingSelect" class="t-select" aria-label="Pacing Mode">
+              <option value="AUTO">⚡ Self-Paced</option>
+              <option value="LOCKSTEP">🔒 Teacher-Locked</option>
+            </select>
+          </div>
+          <div class="t-controls">
+            <button type="button" id="brAutoDealPartsBtn" class="iconBtn" title="Automatically deal Parts A, B, C, [D] evenly across members in every room">🔀 Auto-Deal Parts A→D</button>
+            <button type="button" id="brSaveRoomsBtn" class="btn ghost" style="padding:9px 14px;font-size:13px">💾 Broadcast Rooms</button>
+            <button type="button" id="brAssignSelectedBtn" class="btn" style="padding:9px 16px;font-size:13.5px">🚀 Assign Jigsaw to Selected Rooms →</button>
+          </div>
+        </div>
+
+        <div id="brPartLegend" class="br-part-legend"></div>
+        <div id="brStatusBanner" class="hidden" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;background:var(--goodBg);border:1px solid var(--good);font-size:13.5px;font-weight:700">
+          <span id="brStatusText"></span>
+          <button type="button" id="brOpenLiveAfterAssignBtn" class="btn" style="padding:6px 12px;font-size:12.5px">📡 Open Live Team Progress →</button>
+        </div>
+      </div>
+
+      <!-- Unassigned Logged-In Lobby (Drag & Drop or 1-Click Move into any Room) -->
+      <div id="brLobbyBox" class="br-lobby-box">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <strong style="font-size:13.5px" id="brLobbyTitle">🛋️ Unassigned Pool (Drag a student into any Breakout Room or use + Room)</strong>
+          <span class="muted" style="font-size:12px">Drop a student here to remove them from a room</span>
+        </div>
+        <div id="brLobbyList" class="br-chip-pool"></div>
+      </div>
+
+      <!-- Breakout Rooms Header & Huddle Preview Toggle -->
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0 12px">
+        <div class="t-controls">
+          <button type="button" id="brViewHomeBtn" class="pill on">🚪 Home Breakout Rooms</button>
+          <button type="button" id="brViewHuddleBtn" class="pill">🔬 Expert Huddle Groups (All A’s, B’s, C’s)</button>
+        </div>
+        <div class="t-controls">
+          <button type="button" id="brSelectAllRoomsBtn" class="iconBtn" style="font-size:12px;padding:5px 10px">☑ Select All Rooms</button>
+          <button type="button" id="brClearRoomsBtn" class="iconBtn" style="font-size:12px;padding:5px 10px">🧹 Close All Rooms</button>
+        </div>
+      </div>
+
+      <!-- Interactive Breakout Room Cards Grid -->
+      <div id="brRoomsGrid" class="br-rooms-grid"></div>
+
+      <!-- Expert Huddle Groups View (shows who meets together by Part A, Part B, Part C, Part D!) -->
+      <div id="brHuddleGrid" class="br-rooms-grid hidden"></div>
+    </div>
+
+    <!-- PANE A: SAVED & LIVE JIGSAWS LIST -->
+    <div id="jPaneList" class="hidden">
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+          <h2 style="margin:0">Your Speaking Jigsaw Sessions</h2>
+          <button type="button" id="jNewBlankBtn" class="btn" style="padding:8px 14px;font-size:13px">✨ + Create New Jigsaw</button>
+        </div>
+        <div id="jSavedListGrid" class="jigsaw-card-grid"></div>
+      </div>
+    </div>
+
+    <!-- PANE B: FULL-FEATURED JIGSAW AUTHORING STUDIO -->
+    <div id="jPaneCreate">
+      <!-- 4 Quick-Start Workflows -->
+      <div class="j-quickstart">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div class="eyebrow">⚡ Instant Authoring Tools (4 Ways to Build)</div>
+          <span class="muted" style="font-size:12px" id="jEditingBadge">Creating New Jigsaw Session</span>
+        </div>
+
+        <div class="j-qs-row">
+          <strong style="font-size:13px;min-width:165px">1️⃣ Ready Templates:</strong>
+          <select id="jTplSelect" class="t-select" style="flex:1;max-width:420px"></select>
+          <button type="button" id="jLoadTplBtn" class="iconBtn">⚡ Load Template</button>
+        </div>
+
+        <div class="j-qs-row">
+          <strong style="font-size:13px;min-width:165px">2️⃣ Convert Lab Lesson:</strong>
+          <select id="jConvLessonSelect" class="t-select" style="flex:1;max-width:420px"></select>
+          <button type="button" id="jConvLessonBtn" class="iconBtn">🔄 Convert to Jigsaw</button>
+        </div>
+
+        <details id="jSplitDetails" style="background:var(--panel);border:1px solid var(--edge);border-radius:10px;padding:10px 12px">
+          <summary style="cursor:pointer;font-weight:800;font-size:13px">3️⃣ Smart-Split Any Pasted Story or Article into Balanced Expert Parts</summary>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+            <textarea id="jRawPasteInput" class="j-textarea" placeholder="Paste any multi-paragraph story, article, or class reading here (at least 100 characters). We will automatically divide it along clean sentence boundaries into Part A, Part B, Part C [and Part D] with starter glossary &amp; questions!"></textarea>
+            <div style="display:flex;justify-content:flex-end">
+              <button type="button" id="jSmartSplitBtn" class="btn" style="padding:8px 14px;font-size:13px">✂️ Smart-Split into Expert Parts</button>
+            </div>
+          </div>
+        </details>
+
+        <div class="j-qs-row">
+          <strong style="font-size:13px;min-width:165px">4️⃣ Optional AI Draft:</strong>
+          <input type="text" id="jAiTopicInput" class="j-input" style="flex:1;max-width:420px;padding:8px 12px" placeholder="Topic (e.g. A mystery at the Bou Inania clock in Fes)">
+          <button type="button" id="jAiGenBtn" class="iconBtn">🤖 Generate AI Draft</button>
+        </div>
+      </div>
+
+      <!-- Session Settings & Cohort Assignment -->
+      <div class="panel" style="margin-bottom:18px">
+        <h2>1. Jigsaw Details, Class Cohort &amp; Classroom Mode</h2>
+        <div class="j-form-grid">
+          <div class="j-field" style="grid-column: span 2">
+            <label for="jTitleInput">Speaking Jigsaw Title</label>
+            <input type="text" id="jTitleInput" class="j-input" placeholder="e.g. The Lost Key in the Medina">
+          </div>
+          <div class="j-field">
+            <label for="jTopicInput">Topic / Theme</label>
+            <input type="text" id="jTopicInput" class="j-input" placeholder="e.g. Mystery &amp; Teamwork">
+          </div>
+          <div class="j-field">
+            <label for="jCefrSelect">CEFR Level</label>
+            <select id="jCefrSelect" class="j-input">
+              <option value="PRE-A1">PRE-A1 (Starter)</option>
+              <option value="A1">A1 (Elementary)</option>
+              <option value="A2" selected>A2 (Pre-Intermediate)</option>
+              <option value="B1">B1 (Intermediate)</option>
+              <option value="B2">B2 (Upper-Intermediate)</option>
+              <option value="C1">C1 (Advanced)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="j-form-grid">
+          <div class="j-field" id="jTargetTeacherWrap">
+            <label for="jTargetTeacherSelect">Assigned Teacher</label>
+            <select id="jTargetTeacherSelect" class="j-input"></select>
+          </div>
+          <div class="j-field">
+            <label for="jTargetClassSelect">Target Class Cohort</label>
+            <select id="jTargetClassSelect" class="j-input"></select>
+          </div>
+          <div class="j-field">
+            <label for="jPartCountSelect">Expert Parts per Team</label>
+            <select id="jPartCountSelect" class="j-input">
+              <option value="2">2 Expert Parts (Pairs: A + B)</option>
+              <option value="3" selected>3 Expert Parts (Trios: A + B + C)</option>
+              <option value="4">4 Expert Parts (Quads: A + B + C + D)</option>
+            </select>
+          </div>
+          <div class="j-field">
+            <label for="jPacingSelect">Classroom Pacing</label>
+            <select id="jPacingSelect" class="j-input">
+              <option value="AUTO">⚡ Auto-Flow (Self-Paced Steps)</option>
+              <option value="LOCKSTEP">🔒 Teacher-Locked Phases</option>
+            </select>
+          </div>
+          <div class="j-field">
+            <label for="jCollabSelect">Home Team Clue Sharing</label>
+            <select id="jCollabSelect" class="j-input">
+              <option value="ORAL">🗣️ Classroom Oral Speaking</option>
+              <option value="CLUE_BOARD">💬 Hybrid Live Clue-Board</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Expert Parts Visual Editor -->
+      <div class="panel" style="margin-bottom:18px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+          <h2 style="margin:0">2. Expert Reading Parts &amp; Mastery Checks</h2>
+          <span class="muted" style="font-size:12.5px">Each student receives ONLY their assigned Expert Part until the Synthesis Quiz is finished!</span>
+        </div>
+        <div id="jPartTabs" class="part-tabs"></div>
+        <div id="jActivePartEditor"></div>
+      </div>
+
+      <!-- 4 Whole-Story Synthesis Questions Editor -->
+      <div class="panel" style="margin-bottom:18px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <h2 style="margin:0">3. Whole-Story Synthesis Quiz (4 Cross-Part Questions)</h2>
+          <span class="muted" style="font-size:12.5px">Design questions that require combining clues from Part A, Part B, Part C [and Part D].</span>
+        </div>
+        <div id="jSynthEditorGrid" class="synth-edit-grid"></div>
+      </div>
+
+      <!-- Save & Launch Bar -->
+      <div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div id="jSaveMsg" class="err" style="margin:0"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" id="jResetNewBtn" class="btn ghost">↺ Reset Form</button>
+          <button type="button" id="jSaveDraftBtn" class="btn ghost">💾 Save as Draft</button>
+          <button type="button" id="jLaunchLiveBtn" class="btn">🚀 Save &amp; Launch Live for Class →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANE C: LIVE JIGSAW CLASSROOM ORCHESTRATOR & TEAM BOARD -->
+    <div id="jPaneLive" class="hidden">
+      <div class="t-bar">
+        <div class="t-bar-top">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <select id="jLiveSelect" class="t-select" style="max-width:360px" aria-label="Active Jigsaw Session"></select>
+            <span class="live-pill" id="jLiveStatusPill"><span class="pulse-dot"></span><span id="jLiveStatusText">LIVE · 5s</span></span>
+            <span class="chip" id="jLiveTimerChip">⏱ No timer</span>
+          </div>
+          <div class="t-controls">
+            <button type="button" id="jTimer5Btn" class="iconBtn" title="Start 5-minute phase timer">⏱ 5m</button>
+            <button type="button" id="jTimer10Btn" class="iconBtn" title="Start 10-minute phase timer">⏱ 10m</button>
+            <button type="button" id="jTimerClearBtn" class="iconBtn" title="Clear countdown timer">✕ Timer</button>
+            <button type="button" id="jLiveEditBtn" class="iconBtn">✏️ Edit Jigsaw</button>
+            <button type="button" id="jLiveRefreshBtn" class="iconBtn">🔄 Refresh</button>
+          </div>
+        </div>
+
+        <!-- Phase Controller -->
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border-top:1px solid var(--edge);padding-top:12px">
+          <div class="phase-bar" id="jPhaseBar"></div>
+          <div class="t-controls">
+            <button type="button" id="jRebalanceOnlineBtn" class="iconBtn" title="Form complete A+B+C(+D) teams out of students who are currently online">🔄 Balance Online Teams</button>
+            <button type="button" id="jAutoAssignAllBtn" class="iconBtn" title="Auto-assign entire class roster into balanced teams">🎲 Assign All Roster</button>
+            <button type="button" id="jToggleRescueBtn" class="iconBtn" title="Unlock backup clues for teams missing an absent classmate">🆘 Missing-Part Clues</button>
+            <button type="button" id="jToggleCollabBtn" class="iconBtn" title="Switch between Oral Speaking and Live Written Clue-Board">🗣️ Oral Mode</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 Live Jigsaw Summary Tiles -->
+      <div class="tiles">
+        <div class="tile"><div class="v" id="jTileOnline">0 / 0</div><div class="l">🟢 Online in Cohort</div></div>
+        <div class="tile"><div class="v" id="jTileExperts">0</div><div class="l">✅ Passed Expert Check</div></div>
+        <div class="tile"><div class="v" id="jTileClues">0</div><div class="l">💬 Shared Written Clues</div></div>
+        <div class="tile"><div class="v" id="jTileSynthAcc">--</div><div class="l" id="jTileSynthSub">🎯 Whole-Story Synthesis</div></div>
+      </div>
+
+      <!-- Visual Home Team Cards -->
+      <h2 style="margin:14px 0 10px">👥 Live Home Teams Overview</h2>
+      <div id="jTeamsGrid" class="team-grid"></div>
+
+      <!-- Socrative Synthesis Matrix + Manual Team/Part Reassignment -->
+      <h2 style="margin:18px 0 10px">📊 Student Assignment &amp; Synthesis Quiz Matrix (S1–S4)</h2>
+      <div class="soc-wrap">
+        <table class="soc-table">
+          <thead>
+            <tr>
+              <th>Student</th>
+              <th>Home Team &amp; Part</th>
+              <th>Live Jigsaw Stage</th>
+              <th class="qcol">S1</th>
+              <th class="qcol">S2</th>
+              <th class="qcol">S3</th>
+              <th class="qcol">S4</th>
+            </tr>
+          </thead>
+          <tbody id="jLiveMatrixBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       7. STUDENT COOPERATIVE JIGSAW WORKSPACE (4-STEP INFORMATION GAP)
+       ========================================================================= -->
+  <section id="jigsawView" class="hidden">
+    <div class="t-bar" style="margin-bottom:16px">
+      <div class="t-bar-top">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button type="button" id="jStudentBackBtn" class="btn ghost" style="padding:7px 13px;font-size:13px">← Dashboard</button>
+            <span class="lvl" id="jViewCefr">A2</span>
+            <span class="student-name" id="jViewTitle" style="font-size:20px">Jigsaw Title</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px" id="jViewRoleChips">
+            <span class="chip" id="jViewTeamChip">👥 Home Team 1</span>
+            <span class="chip" id="jViewPartChip" style="border-color:var(--accent);color:var(--accent)">🧩 Expert Part A</span>
+            <span class="chip" id="jViewPhaseChip">⚡ Self-Paced</span>
+            <span class="chip hidden" id="jViewTimerChip">⏱ 05:00</span>
+          </div>
+        </div>
+        <div id="jOwnerPartPreviewBar" class="t-controls hidden"></div>
+      </div>
+    </div>
+
+    <!-- 4-Step Cooperative Navigation -->
+    <div class="j-stepper">
+      <button type="button" class="j-step-btn on" id="jStepBtn1">1️⃣ My Expert Part</button>
+      <button type="button" class="j-step-btn" id="jStepBtn2">2️⃣ Home Team Exchange</button>
+      <button type="button" class="j-step-btn" id="jStepBtn3">3️⃣ Synthesis Quiz (4 Qs)</button>
+      <button type="button" class="j-step-btn" id="jStepBtn4">4️⃣ Full Story 🔒</button>
+    </div>
+
+    <!-- STEP 1: READ & MASTER ASSIGNED EXPERT PART -->
+    <div id="jStep1Pane" class="reader">
+      <div class="passageCol">
+        <div class="panel">
+          <div class="eyebrow" id="jPartEyebrow">YOUR SECRET EXPERT PIECE</div>
+          <h2 id="jPartTitle" style="margin:4px 0 10px">Part A</h2>
+          <div id="jMediaShowcase" class="story-showcase hidden"></div>
+          <div class="toolbar">
+            <button type="button" id="jListenBtn" class="tool">🎙️ Listen (HQ)</button>
+            <button type="button" id="jSpeedBtn" class="tool">1.0×</button>
+            <button type="button" id="jFocusBtn" class="tool">🎯 Focus</button>
+            <button type="button" id="jTextSettingsBtn" class="tool">Aa</button>
+            <span class="faint" id="jPartWordInfo" style="margin-left:auto;font-size:12.5px;font-weight:600"></span>
+          </div>
+          <div id="jVoiceBar" class="neural-voice-bar hidden"></div>
+          <div id="jPartPassage" class="passage"></div>
+          <details style="margin-top:14px" open><summary style="cursor:pointer;font-weight:700;font-size:14px">📚 Expert Vocabulary (Tap highlighted words above)</summary><div id="jPartVocab" class="vocabList"></div></details>
+        </div>
+      </div>
+      <div class="qPanel">
+        <div class="panel qPanel">
+          <div class="eyebrow">STEP 1 · EXPERT MASTERY CHECK (+5 KP 1st Try)</div>
+          <p class="muted" style="margin:0;font-size:13.5px">Before joining your Home Team, prove you understand the key facts in your secret reading part!</p>
+          <div id="jExpertQuestionsBox" style="display:flex;flex-direction:column;gap:14px"></div>
+          <div id="jStep1NextWrap" class="hidden" style="margin-top:8px">
+            <button type="button" id="jGoStep2Btn" class="btn" style="width:100%">✅ Expert Ready! Join Home Team Exchange →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2: HOME TEAM SPEAKING & CLUE EXCHANGE -->
+    <div id="jStep2Pane" class="hidden">
+      <div class="split">
+        <div class="panel">
+          <div class="eyebrow">🗣️ YOUR SPEAKING MISSION</div>
+          <h2 style="margin:4px 0 8px">Explain Your Part in Your Own Words</h2>
+          <div class="tip" id="jSpeakingPromptBox" style="margin-top:0;margin-bottom:14px"></div>
+          
+          <div id="jVoiceClueBox" class="mic-studio" style="margin-bottom:12px">
+            <div class="mic-top-row">
+              <span class="mic-status"><span class="rec-dot"></span><span id="jVcStatus">🎙️ Record Spoken Clue for Teammates (15–45s)</span></span>
+              <span class="mic-timer" id="jVcTimer">0:00</span>
+            </div>
+            <div class="mic-bars" id="jVcBars"></div>
+            <div class="mic-actions">
+              <button type="button" id="jVcRecBtn" class="btn rec-btn" style="padding:7px 13px;font-size:12.5px">🎙️ Record Voice Clue</button>
+              <button type="button" id="jVcStopBtn" class="btn stop-btn hidden" style="padding:7px 13px;font-size:12.5px">⏹ Stop</button>
+              <button type="button" id="jVcPlayBtn" class="iconBtn hidden" style="font-size:12.5px">▶ Preview</button>
+              <button type="button" id="jVcUploadBtn" class="btn hidden" style="padding:7px 13px;font-size:12.5px">📤 Share Voice Clue with Team</button>
+            </div>
+          </div>
+          <div class="j-field">
+            <label for="jMyClueInput" id="jMyClueLabel">Your 1–2 Sentence Expert Clue Summary</label>
+            <textarea id="jMyClueInput" class="j-textarea" style="min-height:85px" placeholder="Write the most important facts from your part so you are ready to share with your Home Team..."></textarea>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;flex-wrap:wrap">
+            <span class="muted" id="jClueSavedMsg" style="font-size:12.5px"></span>
+            <button type="button" id="jSaveClueBtn" class="btn ghost" style="padding:8px 14px;font-size:13px">💾 Save My Clue Summary</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="eyebrow">🕵️ DETECTIVE SCRATCHPAD</div>
+          <h2 style="margin:4px 0 8px">Notes from Teammates’ Parts</h2>
+          <p class="muted" style="margin:0 0 10px;font-size:13px">Listen carefully to the classmates who read the other parts and jot down their key facts here! You can use these notes during the Synthesis Quiz.</p>
+          <textarea id="jScratchpadInput" class="j-textarea" style="min-height:125px" placeholder="• What happened in the other parts?&#10;• Names, times, places, and reasons shared by my teammates..."></textarea>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:18px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <h2 style="margin:0">👥 Home Team Puzzle Pieces</h2>
+          <button type="button" id="jRefreshTeamBtn" class="iconBtn" style="font-size:12.5px">🔄 Refresh Teammates</button>
+        </div>
+        <div id="jTeamSlotsGrid" class="clue-slot-grid"></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:10px">
+          <button type="button" id="jGoStep3Btn" class="btn">Start Whole-Story Synthesis Quiz (4 Qs) →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 3: 4-QUESTION WHOLE-STORY SYNTHESIS QUIZ -->
+    <div id="jStep3Pane" class="reader hidden">
+      <div class="passageCol">
+        <div class="panel">
+          <h2 style="margin:0 0 8px">📌 My Clues &amp; Expert Reference</h2>
+          <div id="jStep3NotesRef" class="tip" style="margin:0 0 12px;white-space:pre-wrap"></div>
+          <details open>
+            <summary style="cursor:pointer;font-weight:800;font-size:14px" id="jStep3PartSummary">📖 My Assigned Expert Passage</summary>
+            <div id="jStep3PartRef" class="passage" style="margin-top:10px;font-size:16px"></div>
+          </details>
+        </div>
+      </div>
+
+      <div class="qPanel">
+        <div class="panel qPanel">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+            <div class="dots" id="jSynthDots"></div>
+            <span class="skillTag" id="jSynthSkillTag"></span>
+          </div>
+          <div id="jSynthLockNotice" class="t-alert hidden" style="margin:0"></div>
+          <p class="qText" id="jSynthQText"></p>
+          <div id="jSynthOptions" style="display:flex;flex-direction:column;gap:10px"></div>
+          <div id="jSynthFeedback"></div>
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <button type="button" id="jPrevSynthBtn" class="btn ghost">← Previous</button>
+            <button type="button" id="jNextSynthBtn" class="btn">Next Question →</button>
+          </div>
+          <div id="jSynthErr" class="err"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 4: COMPLETE ASSEMBLED STORY UNLOCKED -->
+    <div id="jStep4Pane" class="hidden">
+      <div class="panel" style="text-align:center;margin-bottom:18px">
+        <div class="eyebrow">🎉 JIGSAW PUZZLE COMPLETE!</div>
+        <h1 style="margin:8px 0" id="jCompleteHeadline">The Complete Story Is Unlocked!</h1>
+        <div style="font-size:40px;font-weight:800;color:var(--accent);margin:6px 0" id="jCompleteScore">100%</div>
+        <p class="muted" id="jCompleteSub" style="margin:0 0 14px"></p>
+        <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">
+          <button type="button" id="jReviewSynthBtn" class="btn ghost">🔎 Review Synthesis Answers</button>
+          <button type="button" id="jFinishToDashBtn" class="btn">Back to Speaking Lab →</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>📖 Complete Assembled Story (All Parts Together)</h2>
+        <div id="jStep4MediaShowcase" class="story-showcase hidden"></div>
+        <div id="jAssembledStoryBox"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- READING & AUDIO COMFORT DRAWER -->
+<div id="scrim" class="scrim hidden"></div>
+<aside id="drawer" class="drawer">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h2 style="margin:0">Lab Comfort</h2>
+    <button id="closeDrawerBtn" class="iconBtn">✕</button>
+  </div>
+  <div class="muted" style="font-size:13px;font-weight:700">Theme</div>
+  <div class="seg" data-set="theme"><button data-v="dark">🌙 Dark</button><button data-v="light">☀️ Light</button><button data-v="sepia">📜 Sepia</button></div>
+  <div class="muted" style="font-size:13px;font-weight:700">Story Font</div>
+  <div class="seg" data-set="font"><button data-v="serif">Book</button><button data-v="sans">Modern</button><button data-v="legible">Easy</button></div>
+  <div class="muted" style="font-size:13px;font-weight:700">Text Size</div>
+  <div class="seg" data-set="size"><button data-v="16">S</button><button data-v="19">M</button><button data-v="22">L</button><button data-v="26">XL</button></div>
+  <div class="muted" style="font-size:13px;font-weight:700">Line Spacing</div>
+  <div class="seg" data-set="lh"><button data-v="1.6">Tight</button><button data-v="1.85">Normal</button><button data-v="2.2">Airy</button></div>
+  <div class="muted" style="font-size:13px;font-weight:700">Story Audio Speed</div>
+  <div class="seg" data-set="rate"><button data-v="0.8">0.8×</button><button data-v="1">1.0×</button><button data-v="1.2">1.2×</button></div>
+</aside>
+
+<!-- SPEAKING ACHIEVEMENTS MODAL -->
+<div id="badgesModal" class="modal-scrim hidden">
+  <div class="modal-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
       <div>
-        <div class="brand-title">Talk Today <span style="color:var(--accent)">Speaking Portal</span></div>
-        <span class="brand-sub" id="subBrand">Student Portal &amp; Speaking Placement Check</span>
+        <div class="eyebrow">🏆 TALK TODAY SPEAKING LAB</div>
+        <h2 style="margin:2px 0 0">Your 12 Speaking Achievements</h2>
       </div>
+      <button type="button" id="closeBadgesModalBtn" class="iconBtn">✕</button>
     </div>
-    <div class="top-right">
-      <span class="conn-pill" id="connPill">Connecting…</span>
-      <button type="button" id="logoutBtn" class="icon-btn hidden" title="Sign out / switch account">🚪 Exit</button>
-    </div>
-  </header>
+    <div id="badgesModalGrid" class="badges-grid"></div>
+  </div>
+</div>
 
-  <main>
-    <!-- =========================================================================
-         1. THE TT PORTAL LOGIN WALL (Exact ReadTheory / Reading Lab Login)
-         ========================================================================= -->
-    <section id="loginView" class="portal-wrap">
-      <div class="portal-card" id="loginCard">
-        <img src="https://img1.wsimg.com/isteam/ip/e4596783-056a-4255-81a0-601eca83fe81/TALK%20TODAY%20LOGO%20LARGE%20NEW%20TalkToday_Logo_81624.png" alt="Talk Today USA" class="portal-logo">
+<!-- FLOATING TOAST & HIDDEN GAS BRIDGE HOLDER -->
+<div id="toast" class="toast hidden"></div>
+<div id="gasBridgeHolder" style="display:none" aria-hidden="true"></div>
 
-        <div class="role-tabs" role="tablist" aria-label="Sign-in mode">
-          <button type="button" id="roleStudentBtn" class="role-tab on">🎒 Student</button>
-          <button type="button" id="roleTeacherBtn" class="role-tab">👩‍🏫 Class Teacher</button>
-        </div>
-
-        <div id="portalStudentHead">
-          <h2>Student Portal</h2>
-          <p>Enter your student code and registered guardian email to open your Speaking Check.</p>
-          <div class="portal-notice">
-            <b>📅 Biweekly Progress &amp; Speaking Check</b>
-            <span>Authenticate with your Student Code &amp; Registered Guardian Email. Your microphone stays enabled directly in this secure tab.</span>
-          </div>
-        </div>
-
-        <div id="portalTeacherHead" class="hidden">
-          <h2>Class Teacher Live</h2>
-          <p>Real-time classroom speaking radar &amp; audio review — restricted strictly to each class’s assigned teacher.</p>
-          <div class="portal-notice">
-            <b>🔒 Strict Teacher-of-the-Class Privacy</b>
-            <span>Sign in with your Talk Today teacher profile and registered teacher email to monitor your enrolled cohorts live.</span>
-          </div>
-        </div>
-
-        <div id="loginErr" class="err" aria-live="polite"></div>
-
-        <!-- 4-Stage Progress Bar Animation -->
-        <div id="portalProgBox" class="prog-box">
-          <div class="prog-track"><div id="progBarFill" class="prog-fill"></div></div>
-          <div id="progStageLabel" class="prog-label">Verifying student record...</div>
-        </div>
-
-        <!-- Student Login Form -->
-        <form id="portalForm" novalidate>
-          <input type="text" id="studentCode" class="portal-input" placeholder="Student code (or jamalmorelli)" autocomplete="off">
-          <input type="email" id="parentEmail" class="portal-input" placeholder="Registered guardian email" autocomplete="username">
-          <button id="loginSubmitBtn" type="submit" class="btn btn-full">Open Speaking Portal &rarr;</button>
-        </form>
-
-        <!-- Optional 6-Digit Email OTP Box -->
-        <div id="otpVerifyBox" class="card hidden" style="margin-top:12px;text-align:left;background:#0b1120">
-          <div style="font-size:13px;font-weight:700;margin-bottom:6px">Email Verification Required</div>
-          <p class="sub" style="font-size:12.5px">Request a 6-digit verification code for your registered guardian email.</p>
-          <button type="button" id="btnSendOtp" class="btn btn-ghost btn-full" style="margin-bottom:8px">Send 6-Digit Code</button>
-          <input type="text" id="otpInput" class="portal-input" inputmode="numeric" maxlength="6" placeholder="6-digit code">
-          <button type="button" id="btnVerifyOtp" class="btn btn-ok btn-full">Verify &amp; Enter</button>
-          <div id="otpMsg" class="err"></div>
-        </div>
-
-        <!-- Class Teacher Login Form -->
-        <form id="teacherLoginForm" class="hidden">
-          <select id="teacherNameSelect" class="portal-input" aria-label="Select Teacher Profile">
-            <option value="">Select your Teacher profile...</option>
-          </select>
-          <input type="text" id="teacherEmailInput" class="portal-input" placeholder="Registered teacher email" autocomplete="username">
-          <button id="teacherSubmitBtn" type="submit" class="btn btn-full">Open Live Speaking Radar &rarr;</button>
-        </form>
-
-        <!-- Self-Service Guardian Email Linker & Support Link -->
-        <div id="portalSupportLink">
-          <div class="linker-box">
-            <div style="font-weight:700;color:#7dd3fc;margin-bottom:6px">📧 First time or registered without an email?</div>
-            <a id="emailLinkerBtn" href="https://script.google.com/macros/s/AKfycbwfnk74H39Zcvvvxzub6h7oIn_ALOLuHAqY_ONgjIAbdUVVBHsg_cYpTIUftF7YQyckjg/exec" target="_blank" rel="noopener" class="btn btn-full" style="font-size:12.5px;padding:9px 12px">
-              ✨ Link Guardian Email &amp; Student Code Instantly &rarr;
-            </a>
-          </div>
-          <div style="margin-top:10px;font-size:12.5px">
-            <a href="#" id="showSupportFormLink" style="color:#7dd3fc;text-decoration:none">Having trouble logging in? Contact Administration &rarr;</a>
-          </div>
-        </div>
-
-        <!-- Built-in Support Ticket Form -->
-        <form id="portalSupportForm" class="hidden" style="margin-top:14px;text-align:left">
-          <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Send your details directly to the administration desk:</div>
-          <input type="text" id="supCode" class="portal-input" placeholder="Student code">
-          <input type="text" id="supName" class="portal-input" placeholder="Student full name">
-          <input type="email" id="supEmail" class="portal-input" placeholder="Preferred guardian email">
-          <div id="supMsg" class="err"></div>
-          <button id="supBtn" type="submit" class="btn btn-full">Send to Administration</button>
-          <button id="cancelSupportBtn" type="button" class="btn btn-ghost btn-full" style="margin-top:8px">Cancel</button>
-        </form>
-      </div>
-    </section>
-
-    <!-- =========================================================================
-         2. AUTHENTICATED STUDENT SPEAKING PORTAL & RUNNER
-         ========================================================================= -->
-    <section id="studentPortalView" class="hidden">
-      <!-- Family Sibling Switcher -->
-      <div class="sibling-bar" id="siblingBar">
-        <span style="font-weight:800;font-size:13px">👨‍👩‍👧 Switch Sibling Account:</span>
-        <div id="siblingButtons" style="display:flex;gap:8px;flex-wrap:wrap"></div>
-      </div>
-
-      <!-- Verified Student Identity Banner -->
-      <div class="student-bar">
-        <div>
-          <div class="student-name-row">
-            <span class="student-name" id="dashStudentName">Student Name</span>
-            <span class="student-code" id="dashStudentCode">#0000</span>
-          </div>
-          <div class="student-chips">
-            <span class="student-chip" id="dashClassChip">📚 Class</span>
-            <span class="student-chip" id="dashTeacherChip">👩‍🏫 Teacher</span>
-            <span class="student-chip" id="dashPackChip">🎯 Pack</span>
-            <span class="student-chip" id="dashAgeChip">👶 Group</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="runner-wrap">
-        <div class="steps" id="stepPills">
-          <div class="step-pill on" data-step="ready">1 · Ready</div>
-          <div class="step-pill" data-step="mic">2 · Mic Check</div>
-          <div class="step-pill" data-step="task1">3 · Task 1</div>
-          <div class="step-pill" data-step="task2">4 · Task 2</div>
-          <div class="step-pill" data-step="done">5 · Done</div>
-        </div>
-
-        <!-- STEP 1: Verified Ready Screen -->
-        <section class="card" id="stepReady">
-          <h2>Ready for your Speaking Check</h2>
-          <p class="sub" id="readyIntroText">Your student profile is verified. Confirm your speaking pack below, make sure you are in a quiet spot, and start your microphone check.</p>
-
-          <label for="packSelect">Speaking Pack Level</label>
-          <select id="packSelect">
-            <option value="BEG">Beginner (BEG — Pre-A1 / A1)</option>
-            <option value="INT">Intermediate (INT — A2 / B1)</option>
-            <option value="ADV">Advanced (ADV — B2 / C1)</option>
-          </select>
-          <p class="sub" id="packLockNotice" style="font-size:12.5px;margin-top:-4px"></p>
-
-          <button type="button" class="btn btn-full" id="btnStart">🎤 Start Speaking Check &rarr;</button>
-          <p class="status-line" id="readyStatus"></p>
-
-          <!-- Student-Safe Submission Status History (Strictly NO scores or bands!) -->
-          <div id="studentHistoryCard" class="hidden" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--edge)">
-            <div style="font-size:14px;font-weight:800;margin-bottom:6px">My Submitted Speaking Checks</div>
-            <p class="sub" style="font-size:12.5px;margin-bottom:8px">Talk Today teachers &amp; academic staff review all speaking recordings privately.</p>
-            <div id="studentHistoryList"></div>
-          </div>
-        </section>
-
-        <!-- STEP 2: Microphone Check -->
-        <section class="card hidden" id="stepMic">
-          <h2>Microphone Check</h2>
-          <p class="sub">Speak clearly for about five seconds, listen to your playback, and confirm that you can hear yourself. This check is not scored.</p>
-          <div class="timer" id="micTimer">00:00</div>
-          <p class="status-line" id="micStatus">Starting microphone…</p>
-          <audio id="micPlayback" controls class="hidden"></audio>
-          <div class="btn-row">
-            <button type="button" class="btn btn-full" id="btnMicRecord">Record check again</button>
-            <button type="button" class="btn btn-ghost btn-full hidden" id="btnMicStop">Stop</button>
-          </div>
-          <div class="btn-row hidden" id="micConfirmRow">
-            <button type="button" class="btn btn-ok btn-full" id="btnMicOk">✓ I can hear myself clearly</button>
-            <button type="button" class="btn btn-warn btn-full" id="btnMicRetry">Try again</button>
-          </div>
-        </section>
-
-        <!-- STEP 3 & 4: Speaking Tasks -->
-        <section class="card hidden" id="stepTask">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-            <h2 id="taskTitle" style="margin:0">Task 1</h2>
-            <span class="chip" id="taskChip">INT</span>
-          </div>
-          <div class="prompt-box" id="taskPrompt"></div>
-          <div class="btn-row">
-            <button type="button" class="btn btn-ghost btn-full" id="btnReadAloud">🔊 Read prompt aloud</button>
-            <button type="button" class="btn btn-ghost btn-full" id="btnStopAloud">⏹ Stop voice</button>
-          </div>
-          <div class="timer prep" id="taskTimer">00:00</div>
-          <p class="status-line" id="taskStatus">Prepare your answer…</p>
-          <audio id="taskPlayback" controls class="hidden"></audio>
-          <div id="taskActionRow" style="margin-top:12px">
-            <button type="button" class="btn btn-full" id="btnStartPrep">Start preparation</button>
-          </div>
-          <div class="hidden" id="taskRecRow" style="margin-top:12px">
-            <button type="button" class="btn btn-danger btn-full" id="btnStopRec"><span class="rec-dot"></span> Stop recording</button>
-          </div>
-          <div class="btn-row hidden" id="taskAfterRow">
-            <button type="button" class="btn btn-warn btn-full" id="btnRerecord">Rerecord once</button>
-            <button type="button" class="btn btn-ok btn-full" id="btnKeepUpload">Keep &amp; upload &rarr;</button>
-          </div>
-        </section>
-
-        <!-- STEP 5: Submission Complete (Scores Strictly Hidden from Students) -->
-        <section class="card hidden" id="stepDone">
-          <div class="banner-ok" id="doneMessage">
-            Your speaking test has been submitted. Talk Today staff will confirm your placement.
-          </div>
-          <p class="sub">Your audio responses have been securely saved for your Talk Today teacher and academic team.</p>
-          <button type="button" class="btn btn-ghost btn-full" id="btnBackToPortal">&larr; Back to My Speaking Portal</button>
-        </section>
-      </div>
-    </section>
-
-    <!-- =========================================================================
-         3. CLASS TEACHER / DIRECTOR LIVE SPEAKING RADAR
-         ========================================================================= -->
-    <section id="teacherView" class="hidden">
-      <div class="student-bar" style="background:linear-gradient(135deg,#1e1b4b 0%,#312e81 60%,#0369a1 100%)">
-        <div>
-          <div class="student-name-row">
-            <span class="student-name" id="tchDisplayName">Class Teacher Radar</span>
-            <span class="student-code" id="tchRoleBadge">TEACHER</span>
-          </div>
-          <div class="student-chips">
-            <span class="student-chip" id="tchPolledAt">Live Sync Ready</span>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button type="button" id="tchHideNamesBtn" class="icon-btn">🙈 Hide Names</button>
-          <button type="button" id="tchRefreshBtn" class="icon-btn">🔄 Refresh</button>
-        </div>
-      </div>
-
-      <!-- Teacher Filter & Cohort Controls -->
-      <div class="card" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:end">
-        <div id="tchDirectorWrap" class="hidden">
-          <label for="tchTeacherSelect">Teacher Filter (Director)</label>
-          <select id="tchTeacherSelect" style="margin:0">
-            <option value="ALL">All Teachers</option>
-          </select>
-        </div>
-        <div>
-          <label for="tchClassSelect">Enrolled Class Cohort</label>
-          <select id="tchClassSelect" style="margin:0">
-            <option value="ALL">All My Classes</option>
-          </select>
-        </div>
-        <div>
-          <label for="tchPinPackSelect">Pin Cohort Speaking Pack</label>
-          <select id="tchPinPackSelect" style="margin:0">
-            <option value="AUTO">Auto (Match Cohort Level)</option>
-            <option value="BEG">Pin BEG (Beginner)</option>
-            <option value="INT">Pin INT (Intermediate)</option>
-            <option value="ADV">Pin ADV (Advanced)</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-val" id="kpiTotal">0</div><div class="kpi-lbl">Students in Scope</div></div>
-        <div class="kpi-card"><div class="kpi-val" id="kpiOnline">0</div><div class="kpi-lbl">Online Now</div></div>
-        <div class="kpi-card"><div class="kpi-val" id="kpiSubmitted">0</div><div class="kpi-lbl">Submitted</div></div>
-      </div>
-
-      <!-- Live Cohort Matrix -->
-      <div class="card" id="tchTableCard">
-        <h2 style="margin-bottom:12px">Live Student Speaking Status</h2>
-        <div style="overflow-x:auto">
-          <table>
-            <thead>
-              <tr>
-                <th>Student</th>
-                <th>Cohort</th>
-                <th>Presence</th>
-                <th>Live Stage</th>
-                <th>Latest Submission</th>
-                <th>Review</th>
-              </tr>
-            </thead>
-            <tbody id="tchRosterBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Teacher Private Attempt Audio & Rubric Inspector -->
-      <div class="card hidden" id="tchInspectCard">
-        <button type="button" id="tchBackBtn" class="btn btn-ghost" style="margin-bottom:12px">&larr; Back to Live Class Radar</button>
-        <div id="tchInspectMeta"></div>
-        <div id="tchInspectResponses" style="margin-top:14px"></div>
-        <div id="tchInspectScores" style="margin-top:14px"></div>
-
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--edge)">
-          <h3 style="margin:0 0 10px;font-size:16px">Teacher / Staff Review Decision</h3>
-          <label for="tchFinalBand">Final Speaking Band</label>
-          <select id="tchFinalBand">
-            <option value="">— select band —</option>
-            <option>below_A1</option>
-            <option>emerging_A1</option>
-            <option>stable_A1</option>
-            <option>possible_A2</option>
-            <option>below_A2</option>
-            <option>A2</option>
-            <option>B1</option>
-            <option>strong_B1_or_possible_B2</option>
-            <option>below_B1</option>
-            <option>B2</option>
-            <option>possible_C1</option>
-            <option>RETEST</option>
-            <option>AUDIO_UNUSABLE</option>
-          </select>
-          <label for="tchNotes">Teacher Review Notes</label>
-          <textarea id="tchNotes" placeholder="Notes on pronunciation, fluency, or placement confirmation..."></textarea>
-          <div style="display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap">
-            <label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="tchChkUnusable" style="width:auto;margin:0"> Audio unusable</label>
-            <label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="tchChkRetest" style="width:auto;margin:0"> Request retest</label>
-          </div>
-          <button type="button" id="tchSaveReviewBtn" class="btn btn-ok btn-full">Save Review Decision</button>
-          <p class="status-line" id="tchSaveStatus"></p>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <div class="toast" id="toast"></div>
-
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+<script src="media_catalog.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

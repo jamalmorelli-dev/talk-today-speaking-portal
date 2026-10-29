@@ -127,7 +127,8 @@ window.addEventListener('message', ev => {
 const LONG_AUDIO_RPCS = new Set([
   'gradeSpeakingMissionTask', 'studentUploadResponse', 'studentSubmitAttempt',
   'jigsawUploadVoiceClue', 'jigsawPlayVoiceClue', 'jigsawGenerateAiDraft',
-  'teacherPlayLabAudio', 'teacherPlayAudio'
+  'teacherPlayLabAudio', 'teacherPlayAudio',
+  'roleplayTakeTurn', 'roleplayVoices', 'roleplayFinish'
 ]);
 
 async function rpc(fnName, ...args) {
@@ -377,10 +378,13 @@ const jigsawVoiceRec = new VoiceRecorderController('jVcBars');
 let activeAudioPlayer = null;
 
 function stopAllRecordersAndAudio() {
-  [missionRec, plMicRec, plTaskRec, jigsawVoiceRec].forEach(r => {
+  const recs = [missionRec, plMicRec, plTaskRec, jigsawVoiceRec];
+  try { if (typeof rpRec !== 'undefined') recs.push(rpRec); } catch (e) {}
+  recs.forEach(r => {
     if (r.recording) r.stop().catch(() => {});
     else r.cleanupStream().catch(() => {});
   });
+  if ('speechSynthesis' in window) { try { window.speechSynthesis.cancel(); } catch (e) {} }
   if (activeAudioPlayer) {
     try { activeAudioPlayer.pause(); } catch (e) {}
     activeAudioPlayer = null;
@@ -468,7 +472,7 @@ function showView(viewId) {
     stopAllRecordersAndAudio();
   }
   state.activeView = viewId;
-  ['loginView', 'loadingView', 'dashboardView', 'exerciseView', 'placementView', 'summaryView', 'teacherView', 'jigsawStudioView', 'jigsawView'].forEach(id => {
+  ['loginView', 'loadingView', 'dashboardView', 'exerciseView', 'placementView', 'summaryView', 'teacherView', 'jigsawStudioView', 'jigsawView', 'roleplayHubView', 'roleplayStageView', 'roleplayDebriefView'].forEach(id => {
     const node = $(id);
     if (node) node.classList.toggle('hidden', id !== viewId);
   });
@@ -6385,6 +6389,692 @@ $('brSelectAllRoomsBtn').addEventListener('click', () => {
   renderBreakoutWorkspace();
 });
 $('brClearRoomsBtn').addEventListener('click', () => clearAllBreakoutRoomsNow());
+
+
+/* =========================================================================
+   ROLEPLAY STAGE (v3.1) — Solo + 1 AI · Solo + AI Cast · Pass-the-Tablet
+   ========================================================================= */
+const rpRec = new VoiceRecorderController('rpRecBars');
+const RP_CEFRS = ['PRE-A1', 'A1', 'A2', 'B1', 'B2', 'C1'];
+const RP_MODE_LABELS = { SOLO1: '🎙️ Solo + 1 AI', CAST: '🎬 Solo + AI Cast', TABLET: '📱 Pass-the-Tablet' };
+const RP_SCAFFOLD_DESC = {
+  1: '📜 Script: you see the full line to read aloud — perfect for starting out.',
+  2: '🔑 Keywords: you see only key words and build the sentence yourself (+10 KP bonus).',
+  3: '🎤 Improv: just your goal — speak freely like a real conversation (+25 KP bonus).'
+};
+const rpState = {
+  scenes: [], best: {}, homeCefr: 'A1', filterCefr: '', filterKind: 'ALL',
+  selected: null, mode: 'CAST', scaffold: 2,
+  session: null, busy: false, voiceMode: 'openai',
+  localAudio: {}, audioCache: {}, skipVoices: false, voicePlayer: null,
+  lastPlayer: '', passAcknowledged: true, dailyCap: 0, turnsToday: 0
+};
+
+function rpClock(sec) {
+  const s = Math.max(0, Math.floor(sec || 0));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+function rpDefaultScaffold(cefr) {
+  if (cefr === 'PRE-A1' || cefr === 'A1') return 1;
+  if (cefr === 'B2' || cefr === 'C1') return 3;
+  return 2;
+}
+function rpRoleOf(roleId) {
+  const s = rpState.session;
+  return s ? (s.cast || []).find(c => c.roleId === roleId) : null;
+}
+
+/* ---------- Hub ---------- */
+async function openRoleplayHub() {
+  showView('roleplayHubView');
+  $('rpHubErr').textContent = '';
+  const grid = $('rpSceneGrid');
+  clearEl(grid);
+  grid.appendChild(el('div', '🎭 Loading scenes…', 'muted'));
+  try {
+    const res = await rpc('roleplayList', state.code);
+    if (!res || !res.ok) throw new Error((res && res.error) || 'Could not load the Roleplay Stage.');
+    rpState.scenes = res.scenes || [];
+    rpState.best = res.best || {};
+    rpState.homeCefr = res.homeCefr || 'A1';
+    rpState.voiceMode = res.voiceMode || 'browser';
+    rpState.dailyCap = res.dailyCap || 0;
+    rpState.turnsToday = res.turnsToday || 0;
+    if (!rpState.filterCefr) rpState.filterCefr = rpState.homeCefr;
+    $('rpHubStats').textContent = (res.stats ? res.stats.scenesDone : 0) + ' scenes · ' + (res.stats ? res.stats.points : 0) + ' KP';
+    $('rpTurnsChip').textContent = rpState.dailyCap ? ('Turns today: ' + rpState.turnsToday + '/' + rpState.dailyCap) : '👑 Preview · unlimited turns';
+    renderRpHub();
+  } catch (err) {
+    clearEl(grid);
+    $('rpHubErr').textContent = err.message || 'Could not load scenes.';
+  }
+}
+
+function renderRpHub() {
+  const lvlBox = $('rpLevelTabs');
+  clearEl(lvlBox);
+  ['ALL'].concat(RP_CEFRS).forEach(c => {
+    const cnt = c === 'ALL' ? rpState.scenes.length : rpState.scenes.filter(s => s.cefr === c).length;
+    if (!cnt) return;
+    const label = (c === 'ALL' ? 'All Levels' : c) + (c === rpState.homeCefr ? ' ⭐' : '') + ' (' + cnt + ')';
+    const b = el('button', label, 'pill' + (rpState.filterCefr === c ? ' on' : ''));
+    b.type = 'button';
+    b.addEventListener('click', () => { rpState.filterCefr = c; renderRpHub(); });
+    lvlBox.appendChild(b);
+  });
+  const kindBox = $('rpKindTabs');
+  clearEl(kindBox);
+  [['ALL', '🎭 All'], ['story', '📖 Story Scenes'], ['life', '🌍 Life Skills']].forEach(([k, label]) => {
+    const b = el('button', label, 'pill' + (rpState.filterKind === k ? ' on' : ''));
+    b.type = 'button';
+    b.addEventListener('click', () => { rpState.filterKind = k; renderRpHub(); });
+    kindBox.appendChild(b);
+  });
+
+  const grid = $('rpSceneGrid');
+  clearEl(grid);
+  const list = rpState.scenes.filter(s =>
+    (rpState.filterCefr === 'ALL' || s.cefr === rpState.filterCefr) &&
+    (rpState.filterKind === 'ALL' || s.kind === rpState.filterKind));
+  if (!list.length) {
+    grid.appendChild(el('div', 'No scenes match this filter yet — try “All Levels”.', 'muted'));
+    return;
+  }
+  list.forEach(s => {
+    const card = el('div', '', 'card');
+    const open = () => openRpSetup(s);
+    let cover = null;
+    if (s.lessonId && typeof buildStoryCardCover === 'function') {
+      cover = buildStoryCardCover({ lessonId: s.lessonId, title: s.title, topic: s.title }, 'card-cover-wrap', open);
+    }
+    if (!cover) {
+      cover = el('div', s.emoji || '🎭', 'rp-cover');
+      cover.addEventListener('click', open);
+    }
+    card.appendChild(cover);
+    const meta = el('div', '', 'meta');
+    meta.appendChild(el('span', s.cefr, 'lvl'));
+    meta.appendChild(el('span', s.kind === 'story' ? '📖 Story' : '🌍 Life Skills', 'rp-kind-tag'));
+    meta.appendChild(el('span', '🤖 ' + s.aiCount + ' AI'));
+    card.appendChild(meta);
+    card.appendChild(el('h3', s.emoji + ' ' + s.title));
+    card.appendChild(el('div', s.setting, 'rp-scene-setting'));
+    const castRow = el('div', '', 'rp-cast-mini');
+    (s.cast || []).forEach(c => {
+      const chip = el('span', c.emoji + ' ' + c.name, c.side === 'student' ? 'stu' : '');
+      castRow.appendChild(chip);
+    });
+    card.appendChild(castRow);
+    const bottom = el('div', '', 'state');
+    const best = rpState.best[s.id];
+    bottom.appendChild(best
+      ? el('span', '🏅 Best: ' + best.goalsMet + '/' + best.goalsTotal + ' goals · ' + best.plays + ' play' + (best.plays > 1 ? 's' : ''), 'rp-best')
+      : el('span', '🎯 ' + s.goalsCount + ' secret goals', 'badge new'));
+    const btn = el('button', '🎭 Play →', 'btn');
+    btn.type = 'button';
+    btn.style.padding = '6px 12px';
+    btn.style.fontSize = '13px';
+    btn.addEventListener('click', open);
+    bottom.appendChild(btn);
+    card.appendChild(bottom);
+    grid.appendChild(card);
+  });
+}
+
+/* ---------- Setup modal ---------- */
+function openRpSetup(scene) {
+  rpState.selected = scene;
+  rpState.mode = 'CAST';
+  rpState.scaffold = rpDefaultScaffold(scene.cefr);
+  $('rpSetupEyebrow').textContent = '🎭 ' + scene.cefr + ' · ' + (scene.kind === 'story' ? 'STORY SCENE' : 'LIFE SKILLS');
+  $('rpSetupTitle').textContent = scene.emoji + ' ' + scene.title;
+  $('rpSetupSetting').textContent = scene.setting;
+  $('rpSetupErr').textContent = '';
+  ['rpPlayer1', 'rpPlayer2', 'rpPlayer3', 'rpPlayer4'].forEach((id, idx) => {
+    $(id).value = idx === 0 && state.portalContext && state.portalContext.firstName ? state.portalContext.firstName : '';
+    $(id).classList.toggle('hidden', idx >= (scene.maxPlayers || 2));
+  });
+  $('rpModeCast').disabled = (scene.aiCount || 0) < 2;
+  renderRpSetup();
+  $('rpSetupModal').classList.remove('hidden');
+}
+
+function rpPreviewCast() {
+  const s = rpState.selected;
+  if (!s) return [];
+  const ordered = s.cast.filter(c => c.side === 'student').concat(s.cast.filter(c => c.side === 'ai'));
+  const firstAi = s.cast.find(c => c.side === 'ai');
+  if (rpState.mode === 'TABLET') {
+    const names = ['rpPlayer1', 'rpPlayer2', 'rpPlayer3', 'rpPlayer4'].map(id => $(id).value.trim()).filter(Boolean);
+    return ordered.map((c, idx) => ({ c, type: idx < Math.max(2, names.length) ? 'human' : 'ai', player: names[idx] || ('Player ' + (idx + 1)) }));
+  }
+  return ordered.map((c, idx) => {
+    if (idx === 0) return { c, type: 'human', player: 'You' };
+    if (rpState.mode === 'SOLO1' && c.side === 'ai' && firstAi && c.id !== firstAi.id) return { c, type: 'off', player: '' };
+    return { c, type: 'ai', player: '' };
+  });
+}
+
+function renderRpSetup() {
+  [['rpModeSolo1', 'SOLO1'], ['rpModeCast', 'CAST'], ['rpModeTablet', 'TABLET']].forEach(([id, m]) => {
+    $(id).classList.toggle('on', rpState.mode === m);
+  });
+  $('rpTabletBox').classList.toggle('hidden', rpState.mode !== 'TABLET');
+  [1, 2, 3].forEach(n => $('rpSetupSc' + n).classList.toggle('on', rpState.scaffold === n));
+  $('rpScaffoldDesc').textContent = RP_SCAFFOLD_DESC[rpState.scaffold];
+  const box = $('rpRoleAssign');
+  clearEl(box);
+  rpPreviewCast().forEach(p => {
+    const label = p.type === 'human'
+      ? (p.c.emoji + ' ' + p.c.name + ' — ' + p.player)
+      : (p.type === 'off' ? (p.c.emoji + ' ' + p.c.name + ' (sits out)') : (p.c.emoji + ' ' + p.c.name + ' — 🤖 AI'));
+    box.appendChild(el('span', label, p.type));
+  });
+}
+
+$('rpModeSolo1').addEventListener('click', () => { rpState.mode = 'SOLO1'; renderRpSetup(); });
+$('rpModeCast').addEventListener('click', () => { rpState.mode = 'CAST'; renderRpSetup(); });
+$('rpModeTablet').addEventListener('click', () => { rpState.mode = 'TABLET'; renderRpSetup(); });
+['rpPlayer1', 'rpPlayer2', 'rpPlayer3', 'rpPlayer4'].forEach(id => $(id).addEventListener('input', renderRpSetup));
+[1, 2, 3].forEach(n => $('rpSetupSc' + n).addEventListener('click', () => { rpState.scaffold = n; renderRpSetup(); }));
+$('rpSetupCancelBtn').addEventListener('click', () => $('rpSetupModal').classList.add('hidden'));
+$('openRoleplayBtn').addEventListener('click', openRoleplayHub);
+$('rpHubBackBtn').addEventListener('click', () => {
+  showView('dashboardView');
+  if (typeof refreshDashboard === 'function') refreshDashboard().catch(() => {});
+});
+
+$('rpStartBtn').addEventListener('click', async () => {
+  if (rpState.busy || !rpState.selected) return;
+  const players = ['rpPlayer1', 'rpPlayer2', 'rpPlayer3', 'rpPlayer4'].map(id => $(id).value.trim()).filter(Boolean);
+  if (rpState.mode === 'TABLET' && players.length < 2) {
+    $('rpSetupErr').textContent = 'Pass-the-Tablet needs at least 2 player names.';
+    return;
+  }
+  rpState.busy = true;
+  $('rpStartBtn').disabled = true;
+  $('rpStartBtn').textContent = '🎬 Setting the stage…';
+  $('rpSetupErr').textContent = '';
+  try {
+    const res = await rpc('roleplayStart', {
+      auth: state.code, scenarioId: rpState.selected.id, mode: rpState.mode, scaffold: rpState.scaffold, players
+    });
+    if (!res || !res.ok) throw new Error((res && res.error) || 'Could not start this scene.');
+    $('rpSetupModal').classList.add('hidden');
+    rpState.session = res.session;
+    rpState.scaffold = res.session.scaffold;
+    rpState.voiceMode = res.session.voiceMode;
+    rpState.localAudio = {};
+    rpState.audioCache = {};
+    rpState.lastPlayer = '';
+    rpState.passAcknowledged = true;
+    showView('roleplayStageView');
+    renderRpStage();
+    rpSetTurnEnabled(false);
+    await rpPlayTurnVoices(0);
+    rpPrepareTurn();
+  } catch (err) {
+    $('rpSetupErr').textContent = err.message || 'Could not start this scene.';
+  } finally {
+    rpState.busy = false;
+    $('rpStartBtn').disabled = false;
+    $('rpStartBtn').textContent = '🎬 Start the Scene →';
+  }
+});
+
+/* ---------- Stage rendering ---------- */
+function rpBuildLineEl(h, opts) {
+  opts = opts || {};
+  const row = el('div', '', 'rp-line ' + (h.kind === 'human' ? 'human' : 'ai') + (h.flagged ? ' flagged' : ''));
+  row.dataset.lineId = h.id;
+  const head = el('div', '', 'rp-line-head');
+  head.appendChild(el('span', h.emoji + ' ' + h.name));
+  if (h.kind === 'human' && h.player) head.appendChild(el('span', '· ' + h.player, 'who'));
+  if (h.kind === 'human' && h.wpm) head.appendChild(el('span', '⚡ ' + h.wpm + ' WPM', 'rp-wpm'));
+  row.appendChild(head);
+  row.appendChild(el('div', h.text, 'rp-line-text'));
+  const tools = el('div', '', 'rp-line-tools');
+  if (h.kind === 'human' && rpState.localAudio[h.id]) {
+    const b = el('button', '▶ My voice', 'iconBtn');
+    b.type = 'button';
+    b.addEventListener('click', () => rpPlayUrl(rpState.localAudio[h.id]));
+    tools.appendChild(b);
+  }
+  if (h.kind === 'ai' && opts.replay !== false) {
+    const b = el('button', '🔊 Replay', 'iconBtn');
+    b.type = 'button';
+    b.addEventListener('click', () => rpSpeakLine(h, null));
+    tools.appendChild(b);
+  }
+  if (tools.childElementCount) row.appendChild(tools);
+  return row;
+}
+
+function renderRpStage() {
+  const s = rpState.session;
+  if (!s) return;
+  $('rpStageTitle').textContent = s.emoji + ' ' + s.title;
+  $('rpStageCefr').textContent = s.cefr;
+  $('rpTurnChip').textContent = 'Turn ' + Math.min(s.turnLimit, s.turnsHuman + (s.finished ? 0 : 1)) + '/' + s.turnLimit;
+  $('rpModeChip').textContent = RP_MODE_LABELS[s.mode] || s.mode;
+  $('rpSettingText').textContent = '🎬 ' + s.setting;
+
+  const strip = $('rpCastStrip');
+  clearEl(strip);
+  (s.cast || []).forEach(c => {
+    const av = el('div', '', 'rp-avatar ' + c.type + (c.roleId === s.nextRoleId && !s.finished ? ' next' : ''));
+    av.dataset.roleId = c.roleId;
+    av.appendChild(el('div', c.emoji, 'face'));
+    const txt = el('div');
+    txt.appendChild(el('div', c.name, 'nm'));
+    txt.appendChild(el('div', c.type === 'human' ? ('🎤 ' + c.player) : '🤖 AI', 'sub'));
+    av.appendChild(txt);
+    strip.appendChild(av);
+  });
+
+  const feed = $('rpFeed');
+  clearEl(feed);
+  (s.history || []).forEach(h => feed.appendChild(rpBuildLineEl(h)));
+  feed.scrollTop = feed.scrollHeight;
+  [1, 2, 3].forEach(n => $('rpSc' + n).classList.toggle('on', rpState.scaffold === n));
+  rpRenderTurnCard();
+}
+
+function rpRenderTurnCard(popIds) {
+  const s = rpState.session;
+  if (!s) return;
+  const role = rpRoleOf(s.nextRoleId) || {};
+  $('rpNowSpeaking').textContent = s.finished
+    ? '🏁 Scene complete!'
+    : ('🎤 ' + (s.mode === 'TABLET' ? (role.player + ', you are ' + role.name) : ('Your turn as ' + role.name)));
+
+  const gBox = $('rpGoalsBox');
+  clearEl(gBox);
+  const myGoals = (s.goals || []).find(g => g.roleId === s.nextRoleId) || { items: [] };
+  gBox.appendChild(el('div', '🎯 Secret goals' + (s.mode === 'TABLET' ? (' for ' + role.player) : ''), 'rp-card-head'));
+  myGoals.items.forEach(g => {
+    const row = el('div', '', 'rp-goal' + (g.met ? ' met' : '') + (popIds && popIds.indexOf(g.id) >= 0 ? ' pop' : ''));
+    row.appendChild(el('span', g.met ? '✅' : '⬜'));
+    row.appendChild(el('span', g.text));
+    gBox.appendChild(row);
+  });
+
+  const card = s.nextCard || { script: '', keywords: [] };
+  const kwBox = $('rpLineCardKws');
+  clearEl(kwBox);
+  $('rpLineCardText').textContent = '';
+  if (rpState.scaffold === 1) {
+    $('rpLineCardLabel').textContent = '📜 Say this line (or your own version):';
+    $('rpLineCardText').textContent = card.script || '';
+    $('rpLineHearBtn').classList.remove('hidden');
+  } else if (rpState.scaffold === 2) {
+    $('rpLineCardLabel').textContent = '🔑 Build your line with these words:';
+    (card.keywords || []).forEach(k => kwBox.appendChild(el('span', k)));
+    $('rpLineHearBtn').classList.add('hidden');
+  } else {
+    const open = myGoals.items.find(g => !g.met);
+    $('rpLineCardLabel').textContent = '🎤 Improv — speak freely!';
+    $('rpLineCardText').textContent = open ? ('Goal: ' + open.text) : 'All goals done — react naturally or wrap up the scene!';
+    $('rpLineHearBtn').classList.add('hidden');
+  }
+  $('rpHintBox').textContent = s.hint || '';
+}
+
+function rpSetTurnEnabled(on) {
+  ['rpRecBtn', 'rpSendBtn', 'rpRetryBtn', 'rpPlayBackBtn'].forEach(id => { $(id).disabled = !on; });
+}
+
+function rpResetMicUI() {
+  rpRec.resetPreviewUrl();
+  rpRec.ensureBars();
+  $('rpMicBox').classList.remove('recording');
+  $('rpRecStatus').textContent = 'Tap record and say your line';
+  $('rpRecTimer').textContent = '0:00';
+  $('rpRecBtn').classList.remove('hidden');
+  $('rpRecBtn').textContent = '🎙️ Record My Line';
+  ['rpStopBtn', 'rpPlayBackBtn', 'rpRetryBtn', 'rpSendBtn'].forEach(id => $(id).classList.add('hidden'));
+}
+
+function rpPrepareTurn() {
+  const s = rpState.session;
+  if (!s || s.finished) return;
+  rpResetMicUI();
+  rpRenderTurnCard();
+  const role = rpRoleOf(s.nextRoleId) || {};
+  if (s.mode === 'TABLET' && rpState.lastPlayer && role.player && role.player !== rpState.lastPlayer) {
+    $('rpPassText').textContent = 'Pass the tablet to ' + role.player + '!';
+    $('rpPassSub').textContent = 'You are ' + role.emoji + ' ' + role.name + '.';
+    $('rpPassOverlay').classList.remove('hidden');
+    rpSetTurnEnabled(false);
+  } else {
+    $('rpPassOverlay').classList.add('hidden');
+    rpSetTurnEnabled(true);
+  }
+  $('rpStageErr').textContent = '';
+}
+
+$('rpPassReadyBtn').addEventListener('click', () => {
+  $('rpPassOverlay').classList.add('hidden');
+  rpSetTurnEnabled(true);
+});
+[1, 2, 3].forEach(n => $('rpSc' + n).addEventListener('click', () => {
+  rpState.scaffold = n;
+  [1, 2, 3].forEach(k => $('rpSc' + k).classList.toggle('on', k === n));
+  rpRenderTurnCard();
+}));
+$('rpLineHearBtn').addEventListener('click', () => {
+  const s = rpState.session;
+  if (s && s.nextCard && s.nextCard.script) speakShortText(s.nextCard.script);
+});
+
+/* ---------- Voices ---------- */
+function rpPlayUrl(url) {
+  if (!url) return;
+  if (activeAudioPlayer) { try { activeAudioPlayer.pause(); } catch (e) {} }
+  activeAudioPlayer = new Audio(url);
+  activeAudioPlayer.play().catch(() => {});
+}
+
+function rpVoiceProfile(roleId) {
+  const s = rpState.session;
+  const idx = s ? Math.max(0, (s.cast || []).findIndex(c => c.roleId === roleId)) : 0;
+  const pitches = [1.0, 1.25, 0.8, 1.12, 0.9];
+  return { pitch: pitches[idx % pitches.length], rate: Number(settings.rate) || 1.0 };
+}
+
+function rpSpeakBrowser(text, roleId) {
+  return new Promise(resolve => {
+    if (!('speechSynthesis' in window) || !text) { resolve(); return; }
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(String(text));
+    const v = typeof pickBestBrowserVoice === 'function' ? pickBestBrowserVoice() : null;
+    if (v) u.voice = v;
+    u.lang = (v && v.lang) || 'en-US';
+    const prof = rpVoiceProfile(roleId);
+    u.pitch = prof.pitch;
+    u.rate = prof.rate;
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    u.onend = finish;
+    u.onerror = finish;
+    setTimeout(finish, 1500 + String(text).length * 90);
+    window.speechSynthesis.speak(u);
+  });
+}
+
+function rpSpeakLine(line, dataUrl) {
+  const url = dataUrl || rpState.audioCache[line.id];
+  if (!url) return rpSpeakBrowser(line.text, line.roleId);
+  return new Promise(resolve => {
+    if (activeAudioPlayer) { try { activeAudioPlayer.pause(); } catch (e) {} }
+    const p = new Audio(url);
+    activeAudioPlayer = p;
+    rpState.voicePlayer = p;
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    p.onended = finish;
+    p.onerror = () => { rpSpeakBrowser(line.text, line.roleId).then(finish); };
+    setTimeout(finish, 4000 + String(line.text).length * 110);
+    p.play().catch(() => { rpSpeakBrowser(line.text, line.roleId).then(finish); });
+  });
+}
+
+function rpHighlight(line, on) {
+  document.querySelectorAll('#rpCastStrip .rp-avatar').forEach(a => {
+    a.classList.toggle('speaking', on && a.dataset.roleId === line.roleId);
+  });
+  document.querySelectorAll('#rpFeed .rp-line').forEach(r => {
+    r.classList.toggle('speaking', on && r.dataset.lineId === line.id);
+    if (on && r.dataset.lineId === line.id) r.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
+}
+
+async function rpPlayTurnVoices(turn) {
+  const s = rpState.session;
+  if (!s) return;
+  const lines = (s.history || []).filter(h => h.turn === turn && h.kind === 'ai');
+  if (!lines.length) return;
+  rpState.skipVoices = false;
+  $('rpThinking').classList.remove('hidden');
+  $('rpThinkingText').textContent = '🔊 The cast is getting ready to speak…';
+  $('rpSkipVoiceBtn').classList.remove('hidden');
+  let audio = {};
+  if (rpState.voiceMode === 'openai') {
+    try {
+      const res = await rpc('roleplayVoices', { auth: state.code, sessionId: s.sessionId, turn });
+      audio = (res && res.audio) || {};
+      Object.keys(audio).forEach(k => { rpState.audioCache[k] = audio[k]; });
+    } catch (e) { audio = {}; }
+  }
+  for (const line of lines) {
+    if (rpState.skipVoices || state.activeView !== 'roleplayStageView') break;
+    $('rpThinkingText').textContent = '🗣️ ' + line.name + ' is speaking…';
+    rpHighlight(line, true);
+    await rpSpeakLine(line, audio[line.id]);
+    rpHighlight(line, false);
+  }
+  $('rpThinking').classList.add('hidden');
+  $('rpSkipVoiceBtn').classList.add('hidden');
+}
+
+$('rpSkipVoiceBtn').addEventListener('click', () => {
+  rpState.skipVoices = true;
+  if (rpState.voicePlayer) { try { rpState.voicePlayer.pause(); } catch (e) {} }
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+});
+
+/* ---------- Recording & sending a turn ---------- */
+$('rpRecBtn').addEventListener('click', async () => {
+  if (rpState.busy || !rpState.session || rpState.session.finished) return;
+  try {
+    await rpRec.start({
+      maxSeconds: 60,
+      onTick: sec => { $('rpRecTimer').textContent = rpClock(sec); },
+      onAutoStop: rec => { if (rec) rpOnCaptured(rec); }
+    });
+    $('rpMicBox').classList.add('recording');
+    $('rpRecStatus').textContent = '🔴 Recording… say your line!';
+    $('rpRecBtn').classList.add('hidden');
+    $('rpStopBtn').classList.remove('hidden');
+    ['rpPlayBackBtn', 'rpRetryBtn', 'rpSendBtn'].forEach(id => $(id).classList.add('hidden'));
+  } catch (err) {
+    $('rpStageErr').textContent = err.message || 'Microphone access denied.';
+  }
+});
+
+function rpOnCaptured(rec) {
+  $('rpMicBox').classList.remove('recording');
+  $('rpRecStatus').textContent = '✅ Captured ' + rec.durationSeconds + 's — listen back or say it in the scene!';
+  $('rpStopBtn').classList.add('hidden');
+  $('rpRecBtn').classList.add('hidden');
+  ['rpPlayBackBtn', 'rpRetryBtn', 'rpSendBtn'].forEach(id => $(id).classList.remove('hidden'));
+}
+
+$('rpStopBtn').addEventListener('click', async () => {
+  const rec = await rpRec.stop();
+  if (rec) rpOnCaptured(rec);
+});
+$('rpPlayBackBtn').addEventListener('click', () => rpPlayUrl(rpRec.lastUrl));
+$('rpRetryBtn').addEventListener('click', () => rpResetMicUI());
+
+$('rpSendBtn').addEventListener('click', async () => {
+  const s = rpState.session;
+  if (rpState.busy || !s || !rpRec.lastBlob) return;
+  rpState.busy = true;
+  rpSetTurnEnabled(false);
+  $('rpStageErr').textContent = '';
+  $('rpSendBtn').textContent = '⏳ Listening…';
+  $('rpThinking').classList.remove('hidden');
+  $('rpThinkingText').textContent = '🎧 Listening to your line… the cast is thinking…';
+  const blob = rpRec.lastBlob;
+  const speakerRole = rpRoleOf(s.nextRoleId) || {};
+  try {
+    const b64 = await blobToBase64(blob);
+    const res = await rpc('roleplayTakeTurn', {
+      auth: state.code, sessionId: s.sessionId, roleId: s.nextRoleId,
+      base64Audio: b64, mimeType: rpRec.lastMime, durationSeconds: rpRec.lastDurationSec, scaffold: rpState.scaffold
+    });
+    if (!res || !res.ok) throw new Error((res && res.error) || 'Could not send your line.');
+    if (res.retry || res.flagged) {
+      $('rpThinking').classList.add('hidden');
+      $('rpStageErr').textContent = res.message || 'Please try that line again.';
+      if (res.session) rpState.session = res.session;
+      rpResetMicUI();
+      rpSetTurnEnabled(true);
+      return;
+    }
+    if (res.humanLineId) rpState.localAudio[res.humanLineId] = URL.createObjectURL(blob);
+    rpState.session = res.session;
+    rpState.lastPlayer = speakerRole.player || '';
+    renderRpStage();
+    rpRenderTurnCard(res.newlyMetGoals || []);
+    if (res.newlyMetGoals && res.newlyMetGoals.length) {
+      const g = ((res.session.goals || []).find(x => x.roleId === speakerRole.roleId) || { items: [] }).items
+        .filter(it => res.newlyMetGoals.indexOf(it.id) >= 0).map(it => it.text);
+      if (g.length) showToast('✅ Goal complete: ' + g.join(' · '));
+    }
+    $('rpThinking').classList.add('hidden');
+    rpResetMicUI();
+    rpSetTurnEnabled(false);
+    await rpPlayTurnVoices(res.session.lastTurn);
+    if (res.session.finished) {
+      await rpFinishScene();
+    } else {
+      rpPrepareTurn();
+    }
+  } catch (err) {
+    $('rpThinking').classList.add('hidden');
+    $('rpStageErr').textContent = err.message || 'Could not send your line.';
+    rpSetTurnEnabled(true);
+  } finally {
+    rpState.busy = false;
+    $('rpSendBtn').textContent = '🎭 Say It in the Scene →';
+  }
+});
+
+/* ---------- Finish & debrief ---------- */
+async function rpFinishScene() {
+  const s = rpState.session;
+  if (!s) return;
+  rpState.skipVoices = true;
+  if (!s.turnsHuman) {
+    openRoleplayHub();
+    return;
+  }
+  $('rpThinking').classList.remove('hidden');
+  $('rpThinkingText').textContent = '🏁 The AI Speaking Coach is preparing your debrief…';
+  rpSetTurnEnabled(false);
+  try {
+    const res = await rpc('roleplayFinish', { auth: state.code, sessionId: s.sessionId });
+    if (!res || !res.ok) throw new Error((res && res.error) || 'Could not finish the scene.');
+    rpState.session = res.session;
+    renderRpDebrief(res.debrief, res.session);
+    showView('roleplayDebriefView');
+  } catch (err) {
+    $('rpStageErr').textContent = err.message || 'Could not finish the scene.';
+    rpSetTurnEnabled(true);
+  } finally {
+    $('rpThinking').classList.add('hidden');
+  }
+}
+
+$('rpEndBtn').addEventListener('click', () => {
+  const s = rpState.session;
+  if (!s || rpState.busy) return;
+  if (!s.turnsHuman) { openRoleplayHub(); return; }
+  if (window.confirm('End this scene now and see your debrief?')) rpFinishScene();
+});
+$('rpStageBackBtn').addEventListener('click', () => {
+  const s = rpState.session;
+  if (s && s.turnsHuman && !s.finished && !window.confirm('Leave this scene? Your progress in it will not be scored.')) return;
+  openRoleplayHub();
+});
+
+function renderRpDebrief(d, session) {
+  $('rpDebriefTitle').textContent = d.emoji + ' ' + d.title;
+  $('rpDebriefKp').textContent = '+' + d.points;
+  $('rpDebriefGoals').textContent = d.goalsMet + '/' + d.goalsTotal;
+  $('rpDebriefWpm').textContent = d.avgWpm ? String(d.avgWpm) : '--';
+  $('rpDebriefTurns').textContent = String(d.humanTurns);
+  $('rpDebriefSaved').textContent = d.pointsSaved
+    ? ('✨ KP added to your Speaking Lab total · ' + (RP_MODE_LABELS[d.mode] || d.mode))
+    : '👑 Preview mode — KP shown but not saved.';
+
+  const aw = $('rpDebriefAwards');
+  clearEl(aw);
+  (d.awards || []).forEach(a => {
+    const chip = el('div', a.icon + ' ' + a.name, 'rp-award');
+    chip.appendChild(el('small', a.desc));
+    aw.appendChild(chip);
+  });
+
+  const coach = $('rpCoachBox');
+  clearEl(coach);
+  coach.appendChild(el('p', '🌟 ' + d.praise));
+  coach.appendChild(el('p', '💡 ' + d.tip));
+
+  const up = $('rpUpgradesBox');
+  clearEl(up);
+  if (!(d.upgrades || []).length) up.appendChild(el('div', 'Your lines were already natural — great job! Try Improv mode next time for a bigger challenge.', 'muted'));
+  (d.upgrades || []).forEach(u => {
+    const box = el('div', '', 'rp-upgrade');
+    box.appendChild(el('div', '🗣️ ' + u.said, 'said'));
+    box.appendChild(el('div', '✨ ' + u.better, 'better'));
+    if (u.why) box.appendChild(el('div', u.why, 'why'));
+    const hear = el('button', '🔊 Hear it', 'iconBtn');
+    hear.type = 'button';
+    hear.style.fontSize = '12px';
+    hear.style.padding = '3px 9px';
+    hear.style.marginTop = '6px';
+    hear.addEventListener('click', () => speakShortText(u.better));
+    box.appendChild(hear);
+    up.appendChild(box);
+  });
+
+  const pl = $('rpDebriefPlayers');
+  clearEl(pl);
+  (d.players || []).forEach(p => {
+    const card = el('div', '', 'rp-player-card');
+    const head = el('div', p.emoji + ' ' + p.roleName + (d.mode === 'TABLET' ? (' — ' + p.player) : ''));
+    head.style.fontWeight = '800';
+    card.appendChild(head);
+    card.appendChild(el('div', p.turns + ' lines · ' + p.words + ' words' + (p.avgWpm ? (' · ⚡ ' + p.avgWpm + ' WPM') : ''), 'muted'));
+    if (d.mode === 'TABLET') {
+      const bar = el('div', '', 'rp-share-bar');
+      const fill = el('i');
+      fill.style.width = Math.max(4, p.talkSharePct) + '%';
+      bar.appendChild(fill);
+      card.appendChild(bar);
+      card.appendChild(el('div', '🗣️ Talk share: ' + p.talkSharePct + '%', 'muted'));
+    }
+    (p.goals || []).forEach(g => {
+      const row = el('div', '', 'rp-goal' + (g.met ? ' met' : ''));
+      row.style.marginTop = '6px';
+      row.appendChild(el('span', g.met ? '✅' : '⬜'));
+      row.appendChild(el('span', g.text));
+      card.appendChild(row);
+    });
+    if ((p.vocabHits || []).length) {
+      const kw = el('div', '', 'rp-card-kws');
+      kw.style.marginTop = '8px';
+      p.vocabHits.forEach(w => kw.appendChild(el('span', '✓ ' + w)));
+      card.appendChild(kw);
+    }
+    pl.appendChild(card);
+  });
+
+  const feed = $('rpReplayFeed');
+  clearEl(feed);
+  (session.history || []).forEach(h => feed.appendChild(rpBuildLineEl(h)));
+}
+
+$('rpPlayAgainBtn').addEventListener('click', () => {
+  const s = rpState.session;
+  const scene = s ? rpState.scenes.find(x => x.id === s.scenarioId) : null;
+  if (scene) { openRoleplayHub().then(() => openRpSetup(scene)); }
+  else openRoleplayHub();
+});
+$('rpBackToHubBtn').addEventListener('click', openRoleplayHub);
 
 
 /* ---------- Jigsaw Step 2 Spoken Voice Clue Recorder Listeners ---------- */

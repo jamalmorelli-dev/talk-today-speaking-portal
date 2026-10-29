@@ -213,6 +213,19 @@
       <div id="placementHistoryBox" class="placement-hist-list hidden"></div>
     </div>
 
+    
+    <!-- Roleplay Stage Launch Card -->
+    <div class="rp-launch-card" id="rpLaunchCard">
+      <div class="rp-launch-inner">
+        <div>
+          <div class="eyebrow">🎭 NEW · ROLEPLAY STAGE</div>
+          <div style="font-size:17px;font-weight:800;margin-top:2px">Step into a scene and talk your way to the goal!</div>
+          <div class="muted" style="font-size:13px;margin-top:2px">24 scenes · Solo with AI · AI Cast · Pass-the-Tablet with friends · AI Speaking Coach debrief</div>
+        </div>
+        <button type="button" id="openRoleplayBtn" class="btn rp-launch-btn">🎭 Open Roleplay Stage →</button>
+      </div>
+    </div>
+
     <!-- Stats & Speaking Skills Split -->
     <div class="split">
       <div class="panel">
@@ -1099,6 +1112,154 @@
       </div>
     </div>
   </section>
+
+  <!-- =========================================================================
+       6. ROLEPLAY STAGE — SCENE HUB
+       ========================================================================= -->
+  <section id="roleplayHubView" class="hidden">
+    <div class="t-bar" style="margin-bottom:14px">
+      <div class="t-bar-top">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button type="button" id="rpHubBackBtn" class="btn ghost" style="padding:7px 13px;font-size:13px">← Back to Speaking Lab</button>
+            <span class="student-name" style="font-size:20px">🎭 Roleplay Stage</span>
+            <span class="chip" id="rpHubStats">0 scenes · 0 KP</span>
+            <span class="chip" id="rpTurnsChip">Turns today: 0</span>
+          </div>
+          <div class="muted" style="font-size:12.5px;margin-top:4px">Pick a scene, choose who plays, and talk your way to every secret goal. The AI Speaking Coach debriefs you at the end.</div>
+        </div>
+      </div>
+      <div class="t-controls" style="justify-content:space-between;border-top:1px solid var(--edge);padding-top:12px">
+        <div class="filters" id="rpLevelTabs" style="margin:0"></div>
+        <div class="filters" id="rpKindTabs" style="margin:0"></div>
+      </div>
+    </div>
+    <div id="rpHubErr" class="err"></div>
+    <div class="grid" id="rpSceneGrid"></div>
+  </section>
+
+  <!-- =========================================================================
+       7. ROLEPLAY STAGE — LIVE SCENE
+       ========================================================================= -->
+  <section id="roleplayStageView" class="hidden">
+    <div class="t-bar" style="margin-bottom:14px">
+      <div class="t-bar-top">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button type="button" id="rpStageBackBtn" class="btn ghost" style="padding:7px 13px;font-size:13px">← Scenes</button>
+          <span class="student-name" style="font-size:19px" id="rpStageTitle">Scene</span>
+          <span class="lvl" id="rpStageCefr">A2</span>
+          <span class="chip" id="rpTurnChip">Turn 0/8</span>
+          <span class="chip" id="rpModeChip">AI Cast</span>
+        </div>
+        <div class="t-controls">
+          <div class="rp-sc-mini" role="group" aria-label="Line card support level">
+            <button type="button" id="rpSc1" class="rp-sc-btn" title="Script: read the full line">📜 Script</button>
+            <button type="button" id="rpSc2" class="rp-sc-btn" title="Prompted: keywords only">🔑 Keywords</button>
+            <button type="button" id="rpSc3" class="rp-sc-btn" title="Improv: speak freely">🎤 Improv</button>
+          </div>
+          <button type="button" id="rpEndBtn" class="iconBtn">🏁 End Scene</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="rp-stage-grid">
+      <div class="rp-stage-left">
+        <div class="panel">
+          <div class="rp-setting" id="rpSettingText"></div>
+          <div class="rp-cast-strip" id="rpCastStrip"></div>
+          <div class="rp-feed" id="rpFeed" aria-live="polite"></div>
+          <div class="rp-thinking hidden" id="rpThinking">
+            <span class="rp-dots"><i></i><i></i><i></i></span>
+            <span id="rpThinkingText">The cast is thinking…</span>
+            <button type="button" id="rpSkipVoiceBtn" class="iconBtn hidden" style="margin-left:auto;font-size:12px;padding:4px 10px">⏭ Skip voices</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="rp-stage-right">
+        <div class="panel rp-turn-panel">
+          <div id="rpPassOverlay" class="rp-pass hidden">
+            <div style="font-size:40px">📱</div>
+            <div class="rp-pass-title" id="rpPassText">Pass the tablet!</div>
+            <div class="muted" id="rpPassSub" style="font-size:13px"></div>
+            <button type="button" id="rpPassReadyBtn" class="btn" style="margin-top:12px">I’m ready — show my turn →</button>
+          </div>
+
+          <div id="rpTurnBox">
+            <div class="rp-now" id="rpNowSpeaking">🎤 Your turn</div>
+            <div class="rp-goals" id="rpGoalsBox"></div>
+
+            <div class="rp-card" id="rpLineCard">
+              <div class="rp-card-head">
+                <span id="rpLineCardLabel">📜 Say this line:</span>
+                <button type="button" id="rpLineHearBtn" class="iconBtn" style="font-size:12px;padding:4px 10px">🔊 Hear it</button>
+              </div>
+              <div class="rp-card-text" id="rpLineCardText"></div>
+              <div class="rp-card-kws" id="rpLineCardKws"></div>
+            </div>
+
+            <div class="rp-hint" id="rpHintBox"></div>
+
+            <div class="mic-studio" id="rpMicBox">
+              <div class="mic-top-row">
+                <span class="mic-status"><span class="rec-dot"></span><span id="rpRecStatus">Tap record and say your line</span></span>
+                <span class="mic-timer" id="rpRecTimer">0:00</span>
+              </div>
+              <div class="mic-bars" id="rpRecBars"></div>
+              <div class="mic-actions">
+                <button type="button" id="rpRecBtn" class="btn rec-btn">🎙️ Record My Line</button>
+                <button type="button" id="rpStopBtn" class="btn stop-btn hidden">⏹ Stop</button>
+                <button type="button" id="rpPlayBackBtn" class="iconBtn hidden">▶ Listen Back</button>
+                <button type="button" id="rpRetryBtn" class="iconBtn hidden">↺ Re-Record</button>
+                <button type="button" id="rpSendBtn" class="btn hidden">🎭 Say It in the Scene →</button>
+              </div>
+            </div>
+            <div id="rpStageErr" class="err"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       8. ROLEPLAY STAGE — AI SPEAKING COACH DEBRIEF
+       ========================================================================= -->
+  <section id="roleplayDebriefView" class="hidden">
+    <div class="panel rp-debrief-hero">
+      <div class="eyebrow">🎬 SCENE COMPLETE</div>
+      <h1 id="rpDebriefTitle" style="margin:8px 0">Great scene!</h1>
+      <div class="rp-debrief-stats">
+        <div class="rp-stat"><div class="v" id="rpDebriefKp">+0</div><div class="l">Speaking KP</div></div>
+        <div class="rp-stat"><div class="v" id="rpDebriefGoals">0/0</div><div class="l">Secret Goals</div></div>
+        <div class="rp-stat"><div class="v" id="rpDebriefWpm">--</div><div class="l">Avg Spoken WPM</div></div>
+        <div class="rp-stat"><div class="v" id="rpDebriefTurns">0</div><div class="l">Lines Spoken</div></div>
+      </div>
+      <div class="muted" id="rpDebriefSaved" style="font-size:12.5px;margin-top:6px"></div>
+      <div class="rp-awards" id="rpDebriefAwards"></div>
+    </div>
+
+    <div class="split">
+      <div class="panel">
+        <h2>🌟 AI Speaking Coach</h2>
+        <div class="rp-coach" id="rpCoachBox"></div>
+        <h2 style="margin-top:16px">✨ Say It Even Better</h2>
+        <div id="rpUpgradesBox"></div>
+      </div>
+      <div class="panel">
+        <h2>🎭 Your Performance</h2>
+        <div id="rpDebriefPlayers"></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <h2>🎬 Scene Replay</h2>
+      <div class="rp-feed" id="rpReplayFeed" style="max-height:none"></div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:14px">
+        <button type="button" id="rpPlayAgainBtn" class="btn ghost">↺ Play This Scene Again</button>
+        <button type="button" id="rpBackToHubBtn" class="btn">More Scenes →</button>
+      </div>
+    </div>
+  </section>
 </main>
 
 <!-- READING & AUDIO COMFORT DRAWER -->
@@ -1131,6 +1292,50 @@
       <button type="button" id="closeBadgesModalBtn" class="iconBtn">✕</button>
     </div>
     <div id="badgesModalGrid" class="badges-grid"></div>
+  </div>
+</div>
+
+
+<!-- ROLEPLAY SCENE SETUP MODAL -->
+<div id="rpSetupModal" class="modal-scrim hidden">
+  <div class="modal-card rp-setup-card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div>
+        <div class="eyebrow" id="rpSetupEyebrow">🎭 SCENE SETUP</div>
+        <h2 style="margin:2px 0 6px" id="rpSetupTitle">Scene</h2>
+        <div class="muted" style="font-size:13.5px" id="rpSetupSetting"></div>
+      </div>
+      <button type="button" id="rpSetupCancelBtn" class="iconBtn">✕</button>
+    </div>
+
+    <div class="rp-setup-label">1. Who’s on stage?</div>
+    <div class="rp-mode-row">
+      <button type="button" id="rpModeSolo1" class="rp-mode-card"><b>🎙️ Solo + 1 AI</b><span>You and one AI character</span></button>
+      <button type="button" id="rpModeCast" class="rp-mode-card"><b>🎬 Solo + AI Cast</b><span>You and the full AI cast</span></button>
+      <button type="button" id="rpModeTablet" class="rp-mode-card"><b>📱 Pass-the-Tablet</b><span>2–4 friends, one device</span></button>
+    </div>
+
+    <div id="rpTabletBox" class="rp-tablet-box hidden">
+      <div class="muted" style="font-size:12.5px;margin-bottom:6px">Type each player’s first name (leave extra boxes empty). AI plays any empty roles.</div>
+      <div class="rp-player-inputs">
+        <input type="text" id="rpPlayer1" class="portal-input" maxlength="20" placeholder="Player 1">
+        <input type="text" id="rpPlayer2" class="portal-input" maxlength="20" placeholder="Player 2">
+        <input type="text" id="rpPlayer3" class="portal-input" maxlength="20" placeholder="Player 3 (optional)">
+        <input type="text" id="rpPlayer4" class="portal-input" maxlength="20" placeholder="Player 4 (optional)">
+      </div>
+    </div>
+    <div id="rpRoleAssign" class="rp-role-assign"></div>
+
+    <div class="rp-setup-label">2. How much help?</div>
+    <div class="seg rp-scaffold-seg" id="rpScaffoldRow">
+      <button type="button" id="rpSetupSc1">📜 Script</button>
+      <button type="button" id="rpSetupSc2">🔑 Keywords</button>
+      <button type="button" id="rpSetupSc3">🎤 Improv</button>
+    </div>
+    <div class="muted" id="rpScaffoldDesc" style="font-size:12.5px;margin-top:6px"></div>
+
+    <div id="rpSetupErr" class="err"></div>
+    <button type="button" id="rpStartBtn" class="btn" style="width:100%">🎬 Start the Scene →</button>
   </div>
 </div>
 

@@ -170,23 +170,335 @@ async function rpc(fnName, ...args) {
   });
 }
 
+
 /* =========================================================================
-   TOP-LEVEL HTTPS BROWSER MICROPHONE STUDIO (WEBAUDIO + MEDIARECORDER)
+   UNIVERSAL MICROPHONE ENGINE (v3.2) — WORKS ON EVERY MODERN BROWSER
    ========================================================================= */
+const MIC_DEVICE_KEY = 'ttsl_mic_device_v1';
+const MIC_SILENCE_PEAK = 0.006;
+const MIC_WHISPER_TYPES = ['webm', 'ogg', 'mp4', 'm4a', 'x-m4a', 'aac', 'mpeg', 'mp3', 'wav', 'x-wav', 'flac'];
+const SILENT_WAV_URL = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+
+function micEnv() {
+  const ua = navigator.userAgent || '';
+  const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+  const android = /Android/i.test(ua);
+  const inApp = /FBAN|FBAV|FB_IAB|FBIOS|Instagram|Line\/|MicroMessenger|Snapchat|TikTok|musical_ly|BytedanceWebview|LinkedInApp|Pinterest/i.test(ua) ||
+    (android && /; wv\)/.test(ua));
+  const mac = !ios && /Macintosh|Mac OS X/.test(ua);
+  const win = /Windows/.test(ua);
+  const chromeOS = /CrOS/.test(ua);
+  const firefox = /Firefox|FxiOS/.test(ua);
+  const edge = /Edg\//.test(ua);
+  const safari = /Safari/.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS|Edg\//.test(ua);
+  return { ua, ios, android, inApp, mac, win, chromeOS, firefox, edge, safari, secure: window.isSecureContext !== false };
+}
+
+function micHasApi() {
+  return !!((navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ||
+    navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia);
+}
+
+function micGetUserMedia(constraints) {
+  const md = navigator.mediaDevices;
+  if (md && md.getUserMedia) return md.getUserMedia(constraints);
+  const legacy = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+  if (legacy) return new Promise((res, rej) => legacy.call(navigator, constraints, res, rej));
+  const e = new Error('getUserMedia is not available');
+  e.name = 'NotSupportedError';
+  return Promise.reject(e);
+}
+
+function micSleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* ---------- Friendly, platform-specific error help ---------- */
+function micHelpSteps(code, env) {
+  const steps = [];
+  if (code === 'INSECURE') {
+    steps.push('Open the Speaking Lab with its secure link: ' + location.href.replace(/^http:/, 'https:'));
+  } else if (code === 'INAPP') {
+    steps.push('This app’s built-in browser blocks microphones.');
+    steps.push(env.ios ? 'Tap the ••• or Share button, then choose “Open in Safari”.' : 'Tap the ⋮ menu, then choose “Open in Chrome” (or “Open in browser”).');
+    steps.push('Or tap “Copy link” below and paste it into Chrome or Safari.');
+  } else if (code === 'UNSUPPORTED') {
+    steps.push('Please open the Speaking Lab in an up-to-date Chrome, Safari, Edge or Firefox.');
+    steps.push('Tap “Copy link” below and paste it into that browser.');
+  } else if (code === 'DENIED' || code === 'SYSTEM_DENIED') {
+    if (env.ios) {
+      steps.push(env.safari ? 'Tap “aA” in the address bar → Website Settings → Microphone → Allow.' : 'Open iPhone/iPad Settings → your browser (Chrome/Firefox/Edge) → turn Microphone ON.');
+      steps.push('Also check iPhone/iPad Settings → Safari → Microphone → Ask or Allow.');
+    } else if (env.android) {
+      steps.push('Tap the 🔒 (or ⓘ) icon left of the web address → Permissions → Microphone → Allow.');
+      steps.push('If it is still blocked: Android Settings → Apps → your browser → Permissions → Microphone → Allow.');
+    } else {
+      steps.push('Click the 🔒 (or 🎙️) icon in the address bar → Microphone → Allow.');
+      if (env.mac) steps.push('Mac: System Settings → Privacy & Security → Microphone → switch ON your browser.');
+      if (env.win) steps.push('Windows: Settings → Privacy & security → Microphone → turn ON “Microphone access” and “Let desktop apps access your microphone”.');
+      if (env.chromeOS) steps.push('Chromebook: Settings → Security and Privacy → Privacy controls → Microphone access → ON.');
+    }
+    steps.push('Then tap “Try again”.');
+  } else if (code === 'NOT_FOUND') {
+    steps.push('No microphone was found on this device.');
+    steps.push('Plug in headphones that have a microphone (or connect a Bluetooth headset), then tap “Try again”.');
+    steps.push('A phone or tablet works perfectly too — they all have a built-in microphone.');
+  } else if (code === 'BUSY') {
+    steps.push('Another app is using your microphone (a call, WhatsApp, Zoom, Teams, Meet or another tab).');
+    steps.push('Hang up / close that app or tab, then tap “Try again”.');
+  } else {
+    steps.push('Reload the page and tap Record again.');
+    steps.push('If it keeps happening, try Chrome or Safari, or another device.');
+  }
+  return steps;
+}
+
+function micClassifyError(err) {
+  const env = micEnv();
+  const name = (err && err.name) || '';
+  const msg = String((err && err.message) || '');
+  let code = 'UNKNOWN';
+  if (err && err.micCode) code = err.micCode;
+  else if (!env.secure) code = 'INSECURE';
+  else if (name === 'NotSupportedError' || name === 'TypeError') code = env.inApp ? 'INAPP' : 'UNSUPPORTED';
+  else if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') code = /system/i.test(msg) ? 'SYSTEM_DENIED' : 'DENIED';
+  else if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') code = 'NOT_FOUND';
+  else if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError') code = 'BUSY';
+  const titles = {
+    INSECURE: 'The microphone needs the secure (https) link',
+    INAPP: 'Please open this link in Chrome or Safari',
+    UNSUPPORTED: 'This browser cannot use the microphone',
+    DENIED: 'Microphone permission is blocked',
+    SYSTEM_DENIED: 'Your computer is blocking the microphone',
+    NOT_FOUND: 'No microphone found',
+    BUSY: 'Your microphone is busy',
+    UNKNOWN: 'The microphone could not start'
+  };
+  const e = new Error('🎙️ ' + titles[code] + ' — ' + micHelpSteps(code, env)[0]);
+  e.micCode = code;
+  e.micTitle = titles[code];
+  e.micSteps = micHelpSteps(code, env);
+  e.original = name + (msg ? ': ' + msg : '');
+  return e;
+}
+
+/* ---------- Mic help modal (built with DOM APIs — no innerHTML) ---------- */
+function ensureMicUiStyles() {
+  if (document.getElementById('micEngineStyles')) return;
+  const st = document.createElement('style');
+  st.id = 'micEngineStyles';
+  st.textContent = [
+    '.mic-help-scrim{position:fixed;inset:0;z-index:9000;background:rgba(5,10,20,.62);display:flex;align-items:center;justify-content:center;padding:16px}',
+    '.mic-help-card{width:min(520px,100%);max-height:90vh;overflow:auto;background:var(--panel,#111a2b);color:var(--ink,#e8eefc);border:1px solid var(--edge,#2a3550);border-radius:18px;padding:20px 20px 16px;box-shadow:0 24px 60px rgba(0,0,0,.5)}',
+    '.mic-help-card h3{margin:0 0 6px;font-size:20px}',
+    '.mic-help-card ol{margin:10px 0 14px 18px;padding:0;line-height:1.5;font-size:15px}',
+    '.mic-help-card li{margin:6px 0}',
+    '.mic-help-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}',
+    '.mic-help-tech{font-size:11px;opacity:.55;margin-top:8px;word-break:break-word}',
+    '.mic-test-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}',
+    '.mic-test-row select{flex:1;min-width:160px;padding:8px 10px;border-radius:10px;border:1px solid var(--edge,#2a3550);background:var(--panel2,#0d1424);color:inherit;font:inherit;font-size:13px}',
+    '.mic-level{height:10px;border-radius:999px;background:var(--panel2,#0d1424);border:1px solid var(--edge,#2a3550);overflow:hidden;margin-top:8px}',
+    '.mic-level > i{display:block;height:100%;width:0;background:linear-gradient(90deg,#22c55e,#eab308 75%,#ef4444);transition:width .06s linear}',
+    '.mic-test-status{font-size:12.5px;font-weight:700;margin-top:6px;color:var(--muted,#9fb0d0)}'
+  ].join('\n');
+  document.head.appendChild(st);
+}
+
+function showMicHelp(err, onRetry) {
+  ensureMicUiStyles();
+  const old = document.getElementById('micHelpModal');
+  if (old) old.remove();
+  const scrim = el('div', '', 'mic-help-scrim');
+  scrim.id = 'micHelpModal';
+  scrim.setAttribute('role', 'dialog');
+  scrim.setAttribute('aria-modal', 'true');
+  const card = el('div', '', 'mic-help-card');
+  card.appendChild(el('h3', '🎙️ ' + (err.micTitle || 'Microphone problem')));
+  card.appendChild(el('div', 'Follow these quick steps:', 'muted'));
+  const ol = document.createElement('ol');
+  (err.micSteps || ['Reload the page and try again.']).forEach(s => ol.appendChild(el('li', s)));
+  card.appendChild(ol);
+  const actions = el('div', '', 'mic-help-actions');
+  if (err.micCode === 'INAPP' || err.micCode === 'UNSUPPORTED' || err.micCode === 'INSECURE') {
+    const copy = el('button', '📋 Copy link', 'btn ghost');
+    copy.type = 'button';
+    copy.addEventListener('click', () => {
+      const link = location.href.replace(/^http:/, 'https:');
+      const done = () => showToast('✅ Link copied — paste it into Chrome or Safari');
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done).catch(() => window.prompt('Copy this link:', link));
+      else window.prompt('Copy this link:', link);
+    });
+    actions.appendChild(copy);
+  }
+  const close = el('button', 'Close', 'btn ghost');
+  close.type = 'button';
+  close.addEventListener('click', () => scrim.remove());
+  actions.appendChild(close);
+  if (typeof onRetry === 'function' && err.micCode !== 'INAPP' && err.micCode !== 'INSECURE') {
+    const retry = el('button', '🔄 Try again', 'btn');
+    retry.type = 'button';
+    retry.addEventListener('click', () => { scrim.remove(); onRetry(); });
+    actions.appendChild(retry);
+  }
+  card.appendChild(actions);
+  if (err.original) card.appendChild(el('div', 'Details: ' + err.original, 'mic-help-tech'));
+  scrim.appendChild(card);
+  scrim.addEventListener('click', ev => { if (ev.target === scrim) scrim.remove(); });
+  document.body.appendChild(scrim);
+}
+
+/* ---------- Shared audio output (gesture-unlocked; fixes iOS/Safari autoplay blocks) ---------- */
+const AudioOut = {
+  el: null,
+  unlocked: false,
+  ensure() {
+    if (!this.el) {
+      this.el = new Audio();
+      this.el.preload = 'auto';
+      this.el.setAttribute('playsinline', '');
+      this.el.setAttribute('webkit-playsinline', '');
+    }
+    return this.el;
+  },
+  unlock() {
+    if (this.unlocked) return;
+    const a = this.ensure();
+    try {
+      a.muted = false;
+      a.src = SILENT_WAV_URL;
+      const p = a.play();
+      const ok = () => { this.unlocked = true; };
+      if (p && p.then) p.then(ok).catch(() => {}); else ok();
+    } catch (e) {}
+    try {
+      if ('speechSynthesis' in window && !window.__ttslSpeechUnlocked) {
+        const u = new SpeechSynthesisUtterance(' ');
+        u.volume = 0;
+        window.speechSynthesis.speak(u);
+        window.__ttslSpeechUnlocked = true;
+      }
+    } catch (e) {}
+    MicEngine.primeFromGesture();
+  },
+  stop() {
+    if (this.el) { try { this.el.pause(); } catch (e) {} }
+  },
+  /** Plays a URL on the shared element. Resolves when playback ends (or fails). */
+  play(url, opts) {
+    opts = opts || {};
+    const a = this.ensure();
+    return new Promise(resolve => {
+      let done = false;
+      const finish = ok => {
+        if (done) return;
+        done = true;
+        a.onended = null; a.onerror = null;
+        clearTimeout(guard);
+        resolve(ok !== false);
+      };
+      const guard = setTimeout(() => finish(true), opts.maxMs || 120000);
+      try { a.pause(); } catch (e) {}
+      a.onended = () => finish(true);
+      a.onerror = () => finish(false);
+      try {
+        a.src = url;
+        a.currentTime = 0;
+        const p = a.play();
+        if (p && p.catch) p.catch(() => finish(false));
+      } catch (e) { finish(false); }
+      activeAudioPlayer = a;
+    });
+  }
+};
+
+/* ---------- Shared mic engine ---------- */
+const MicEngine = {
+  ctx: null,
+  acquiring: null,
+  deviceId: (function () { try { return localStorage.getItem(MIC_DEVICE_KEY) || ''; } catch (e) { return ''; } })(),
+  lastLabel: '',
+
+  getCtx() {
+    if (this.ctx && this.ctx.state !== 'closed') return this.ctx;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    try { this.ctx = new Ctx(); } catch (e) { this.ctx = null; }
+    return this.ctx;
+  },
+
+  /** Must run synchronously inside a click/tap so iOS & Safari allow audio processing. */
+  primeFromGesture() {
+    const c = this.getCtx();
+    if (c && c.state === 'suspended') { try { c.resume(); } catch (e) {} }
+  },
+
+  setDevice(id) {
+    this.deviceId = id || '';
+    try { if (id) localStorage.setItem(MIC_DEVICE_KEY, id); else localStorage.removeItem(MIC_DEVICE_KEY); } catch (e) {}
+  },
+
+  async listDevices() {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+      const all = await navigator.mediaDevices.enumerateDevices();
+      return all.filter(d => d.kind === 'audioinput');
+    } catch (e) { return []; }
+  },
+
+  async acquire(onSlowPrompt) {
+    const env = micEnv();
+    if (!env.secure) throw micClassifyError({ micCode: 'INSECURE' });
+    if (!micHasApi()) throw micClassifyError({ name: 'NotSupportedError' });
+    if (this.acquiring) return this.acquiring;
+    const tuned = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    const ladder = [];
+    if (this.deviceId) ladder.push({ audio: Object.assign({ deviceId: { exact: this.deviceId } }, tuned), usesDevice: true });
+    ladder.push({ audio: tuned });
+    ladder.push({ audio: true });
+    const slow = setTimeout(() => { if (typeof onSlowPrompt === 'function') onSlowPrompt(); }, 1500);
+    this.acquiring = (async () => {
+      let lastErr = null;
+      for (let i = 0; i < ladder.length; i++) {
+        const step = ladder[i];
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const stream = await micGetUserMedia({ audio: step.audio, video: false });
+            const tr = stream.getAudioTracks()[0];
+            if (!tr) { try { stream.getTracks().forEach(t => t.stop()); } catch (e) {} throw Object.assign(new Error('No audio track'), { name: 'NotFoundError' }); }
+            this.lastLabel = tr.label || '';
+            return stream;
+          } catch (e) {
+            lastErr = e;
+            const n = (e && e.name) || '';
+            if (n === 'NotAllowedError' || n === 'PermissionDeniedError' || n === 'SecurityError') throw micClassifyError(e);
+            if ((n === 'NotReadableError' || n === 'TrackStartError' || n === 'AbortError') && attempt === 0) { await micSleep(450); continue; }
+            if (step.usesDevice && (n === 'OverconstrainedError' || n === 'NotFoundError' || n === 'ConstraintNotSatisfiedError')) this.setDevice('');
+            break;
+          }
+        }
+      }
+      throw micClassifyError(lastErr || { name: 'NotFoundError' });
+    })();
+    try { return await this.acquiring; } finally { clearTimeout(slow); this.acquiring = null; }
+  }
+};
+
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  try { navigator.mediaDevices.addEventListener('devicechange', () => { try { refreshMicPicker(); } catch (e) {} }); } catch (e) {}
+}
+
+/* ---------- Recording helpers ---------- */
 function pickSupportedAudioMime() {
   if (typeof MediaRecorder === 'undefined') return '';
-  const candidates = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/mp4',
-    'audio/ogg;codecs=opus'
-  ];
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/aac'];
   for (let i = 0; i < candidates.length; i++) {
-    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) {
-      return candidates[i];
-    }
+    try { if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) return candidates[i]; } catch (e) {}
   }
   return '';
+}
+
+function micMimeAcceptable(mime) {
+  const m = String(mime || '').toLowerCase().split(';')[0];
+  if (!m) return false;
+  return MIC_WHISPER_TYPES.some(t => m.indexOf(t) >= 0);
 }
 
 function blobToBase64(blob) {
@@ -199,6 +511,59 @@ function blobToBase64(blob) {
     };
     reader.onerror = () => reject(new Error('Could not read audio recording.'));
     reader.readAsDataURL(blob);
+  });
+}
+
+function micDownsample(chunks, inRate, outRate) {
+  let total = 0;
+  chunks.forEach(c => { total += c.length; });
+  const ratio = inRate / outRate;
+  const outLen = Math.max(1, Math.floor(total / ratio));
+  const out = new Float32Array(outLen);
+  let ci = 0, cOff = 0, consumed = 0;
+  const flat = (idx) => {
+    while (ci < chunks.length && idx >= consumed + chunks[ci].length) { consumed += chunks[ci].length; ci++; }
+    return ci < chunks.length ? chunks[ci][idx - consumed] : 0;
+  };
+  for (let i = 0; i < outLen; i++) {
+    const start = Math.floor(i * ratio);
+    const end = Math.min(total, Math.floor((i + 1) * ratio));
+    let sum = 0, n = 0;
+    for (let j = start; j < end; j++) { sum += flat(j); n++; }
+    out[i] = n ? sum / n : flat(start);
+  }
+  return out;
+}
+
+function micEncodeWav(samples, rate) {
+  const buf = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + samples.length * 2, true); w(8, 'WAVE');
+  w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, samples.length * 2, true);
+  let o = 44;
+  for (let i = 0; i < samples.length; i++, o += 2) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+/** True if the browser can decode the blob into real audio (guards against broken containers). */
+function micBlobDecodes(blob, ctx) {
+  return new Promise(resolve => {
+    if (!ctx || !blob || !blob.arrayBuffer) { resolve(true); return; }
+    let settled = false;
+    const done = v => { if (!settled) { settled = true; resolve(v); } };
+    setTimeout(() => done(true), 2500);
+    blob.arrayBuffer().then(ab => {
+      try {
+        const p = ctx.decodeAudioData(ab, b => done(!!b && b.duration > 0.25), () => done(false));
+        if (p && p.then) p.then(b => done(!!b && b.duration > 0.25)).catch(() => done(false));
+      } catch (e) { done(false); }
+    }).catch(() => done(true));
   });
 }
 
@@ -221,18 +586,32 @@ class VoiceRecorderController {
     this.bars = [];
     this.stream = null;
     this.audioCtx = null;
+    this.source = null;
     this.analyser = null;
+    this.proc = null;
+    this.sink = null;
     this.rafId = 0;
     this.mediaRecorder = null;
+    this.mrFailed = false;
     this.chunks = [];
+    this.pcm = [];
+    this.pcmRate = 48000;
+    this.peak = 0;
+    this.peakKnown = false;
     this.recording = false;
+    this.starting = false;
     this.startedAt = 0;
     this.clockTimer = null;
     this.autoStopTimer = null;
+    this.silenceTimer = null;
+    this.opts = {};
     this.lastBlob = null;
     this.lastUrl = '';
     this.lastMime = 'audio/webm';
     this.lastDurationSec = 0;
+    this.lastSilent = false;
+    this.lastEngine = '';
+    this.mime = '';
   }
 
   ensureBars() {
@@ -249,127 +628,340 @@ class VoiceRecorderController {
     }
     this.lastBlob = null;
     this.lastDurationSec = 0;
+    this.lastSilent = false;
   }
 
   async start(opts = {}) {
-    await this.cleanupStream();
-    this.resetPreviewUrl();
-    this.ensureBars();
-    if (typeof speech !== 'undefined' && speech.active) speech.stop();
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error('Browser microphone access is unavailable. Please use Chrome, Safari, or Edge over HTTPS.');
-    }
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-    });
-    this.stream = stream;
-
-    // Live 14-bar WebAudio equalizer
+    // Gesture-critical work first (before any await): unlock audio + resume the shared AudioContext.
+    AudioOut.unlock();
+    MicEngine.primeFromGesture();
+    if (this.recording || this.starting) return;
+    this.starting = true;
     try {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (Ctx) {
-        this.audioCtx = new Ctx();
-        const src = this.audioCtx.createMediaStreamSource(stream);
-        this.analyser = this.audioCtx.createAnalyser();
-        this.analyser.fftSize = 64;
-        src.connect(this.analyser);
-        const freq = new Uint8Array(this.analyser.frequencyBinCount);
-        const animate = () => {
-          if (!this.recording || !this.analyser) return;
-          this.analyser.getByteFrequencyData(freq);
-          for (let i = 0; i < this.bars.length; i++) {
-            const v = freq[i % freq.length] || 0;
-            const h = Math.max(5, Math.min(28, Math.round((v / 255) * 28)));
-            this.bars[i].style.height = h + 'px';
-          }
-          this.rafId = requestAnimationFrame(animate);
-        };
-        this.rafId = requestAnimationFrame(animate);
+      await this.cleanupStream();
+      this.resetPreviewUrl();
+      this.ensureBars();
+      this.opts = opts || {};
+      if (typeof speech !== 'undefined' && speech.active) { try { speech.stop(); } catch (e) {} }
+      if ('speechSynthesis' in window) { try { window.speechSynthesis.cancel(); } catch (e) {} }
+      AudioOut.stop();
+
+      let stream;
+      try {
+        stream = await MicEngine.acquire(() => showToast('👆 Tap “Allow” on the microphone pop-up to start recording'));
+      } catch (err) {
+        showMicHelp(err, () => { try { this.start(opts).catch(() => {}); } catch (e) {} });
+        throw err;
       }
-    } catch (e) {}
+      this.stream = stream;
+      const track = stream.getAudioTracks()[0];
+      if (track) {
+        track.onended = () => {
+          if (this.recording) {
+            showToast('🎧 Microphone disconnected — we kept what you recorded.');
+            this.stop().then(res => { if (typeof this.opts.onAutoStop === 'function') this.opts.onAutoStop(res); }).catch(() => {});
+          }
+        };
+      }
 
-    const mime = pickSupportedAudioMime();
-    this.chunks = [];
-    this.mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-    this.lastMime = this.mediaRecorder.mimeType || mime || 'audio/webm';
+      this.peak = 0;
+      this.peakKnown = false;
+      this.pcm = [];
+      this.chunks = [];
+      this.mrFailed = false;
+      this.setupGraph(stream);
 
-    this.mediaRecorder.ondataavailable = ev => {
-      if (ev.data && ev.data.size > 0) this.chunks.push(ev.data);
-    };
-
-    this.startedAt = Date.now();
-    this.recording = true;
-    this.mediaRecorder.start(250);
-
-    if (typeof opts.onTick === 'function') {
-      opts.onTick(0);
-      this.clockTimer = setInterval(() => {
-        const sec = Math.floor((Date.now() - this.startedAt) / 1000);
-        opts.onTick(sec);
-      }, 250);
-    }
-
-    if (opts.maxSeconds && opts.maxSeconds > 0) {
-      this.autoStopTimer = setTimeout(() => {
-        if (this.recording) {
-          this.stop().then(res => {
-            if (typeof opts.onAutoStop === 'function') opts.onAutoStop(res);
-          }).catch(() => {});
+      // MediaRecorder (compact upload). Raw PCM above is the safety net.
+      this.mediaRecorder = null;
+      this.mime = pickSupportedAudioMime();
+      if (typeof MediaRecorder !== 'undefined') {
+        try {
+          const o = {};
+          if (this.mime) o.mimeType = this.mime;
+          o.audioBitsPerSecond = /mp4|aac/.test(this.mime) ? 64000 : 32000;
+          try { this.mediaRecorder = new MediaRecorder(stream, o); }
+          catch (e1) { this.mediaRecorder = this.mime ? new MediaRecorder(stream, { mimeType: this.mime }) : new MediaRecorder(stream); }
+          this.mediaRecorder.ondataavailable = ev => { if (ev.data && ev.data.size > 0) this.chunks.push(ev.data); };
+          this.mediaRecorder.onerror = () => { this.mrFailed = true; };
+          this.mediaRecorder.start(1000);
+        } catch (e) {
+          this.mediaRecorder = null;
+          this.mrFailed = true;
         }
-      }, opts.maxSeconds * 1000);
+      }
+      if (!this.mediaRecorder && !this.proc) {
+        await this.cleanupStream();
+        const err = micClassifyError({ name: 'NotSupportedError' });
+        showMicHelp(err);
+        throw err;
+      }
+
+      this.startedAt = Date.now();
+      this.recording = true;
+      this.animateBars();
+
+      if (typeof opts.onTick === 'function') {
+        opts.onTick(0);
+        this.clockTimer = setInterval(() => opts.onTick(Math.floor((Date.now() - this.startedAt) / 1000)), 250);
+      }
+      if (opts.maxSeconds && opts.maxSeconds > 0) {
+        this.autoStopTimer = setTimeout(() => {
+          if (this.recording) {
+            this.stop().then(res => { if (typeof opts.onAutoStop === 'function') opts.onAutoStop(res); }).catch(() => {});
+          }
+        }, opts.maxSeconds * 1000);
+      }
+      this.silenceTimer = setTimeout(() => {
+        if (this.recording && this.peakKnown && this.peak < MIC_SILENCE_PEAK) {
+          showToast('🔇 We can’t hear you yet — is your microphone muted or covered? Speak up close!');
+        }
+      }, 3000);
+    } finally {
+      this.starting = false;
     }
   }
 
-  stop() {
+  setupGraph(stream) {
+    const ctx = MicEngine.getCtx();
+    this.audioCtx = ctx;
+    if (!ctx) return;
+    try {
+      if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+      this.source = ctx.createMediaStreamSource(stream);
+      this.analyser = ctx.createAnalyser();
+      this.analyser.fftSize = 256;
+      this.source.connect(this.analyser);
+      if (ctx.createScriptProcessor) {
+        this.proc = ctx.createScriptProcessor(4096, 1, 1);
+        this.pcmRate = ctx.sampleRate || 48000;
+        this.proc.onaudioprocess = ev => {
+          if (!this.recording) return;
+          const data = ev.inputBuffer.getChannelData(0);
+          const copy = new Float32Array(data.length);
+          let pk = this.peak;
+          for (let i = 0; i < data.length; i++) {
+            const s = data[i];
+            copy[i] = s;
+            const a = s < 0 ? -s : s;
+            if (a > pk) pk = a;
+          }
+          this.peak = pk;
+          this.peakKnown = true;
+          this.pcm.push(copy);
+        };
+        this.sink = ctx.createGain();
+        this.sink.gain.value = 0;
+        this.source.connect(this.proc);
+        this.proc.connect(this.sink);
+        this.sink.connect(ctx.destination);
+      }
+    } catch (e) {
+      this.proc = null;
+    }
+  }
+
+  animateBars() {
+    if (!this.analyser) return;
+    const freq = new Uint8Array(this.analyser.frequencyBinCount);
+    const animate = () => {
+      if (!this.recording || !this.analyser) return;
+      this.analyser.getByteFrequencyData(freq);
+      for (let i = 0; i < this.bars.length; i++) {
+        const v = freq[(i * 2 + 1) % freq.length] || 0;
+        const h = Math.max(5, Math.min(28, Math.round((v / 255) * 30)));
+        this.bars[i].style.height = h + 'px';
+      }
+      this.rafId = requestAnimationFrame(animate);
+    };
+    this.rafId = requestAnimationFrame(animate);
+  }
+
+  stopMediaRecorder() {
     return new Promise(resolve => {
-      clearInterval(this.clockTimer);
-      clearTimeout(this.autoStopTimer);
-      cancelAnimationFrame(this.rafId);
-      this.bars.forEach(b => { b.style.height = '6px'; });
-
-      if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
-        this.recording = false;
-        this.cleanupStream().then(() => resolve(null));
-        return;
-      }
-
-      const durSec = Math.max(1, Math.round((Date.now() - this.startedAt) / 1000));
-      this.mediaRecorder.onstop = async () => {
-        this.recording = false;
-        const blob = new Blob(this.chunks, { type: this.lastMime || 'audio/webm' });
-        this.lastBlob = blob;
-        this.lastDurationSec = durSec;
-        this.lastUrl = URL.createObjectURL(blob);
-        await this.cleanupStream();
-        resolve({ blob, url: this.lastUrl, mimeType: this.lastMime, durationSeconds: durSec });
+      const mr = this.mediaRecorder;
+      if (!mr || mr.state === 'inactive') { resolve(this.chunks.length ? new Blob(this.chunks, { type: (mr && mr.mimeType) || this.mime || 'audio/webm' }) : null); return; }
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        const type = mr.mimeType || this.mime || 'audio/webm';
+        resolve(this.chunks.length ? new Blob(this.chunks, { type }) : null);
       };
-      try {
-        this.mediaRecorder.stop();
-      } catch (e) {
-        this.recording = false;
-        this.cleanupStream().then(() => resolve(null));
-      }
+      mr.onstop = finish;
+      setTimeout(finish, 1800);
+      try { if (mr.state === 'recording' && mr.requestData) mr.requestData(); } catch (e) {}
+      try { mr.stop(); } catch (e) { finish(); }
     });
+  }
+
+  async stop() {
+    clearInterval(this.clockTimer);
+    clearTimeout(this.autoStopTimer);
+    clearTimeout(this.silenceTimer);
+    cancelAnimationFrame(this.rafId);
+    this.bars.forEach(b => { b.style.height = '6px'; });
+    if (!this.recording) {
+      await this.cleanupStream();
+      return null;
+    }
+    const durSec = Math.max(1, Math.round((Date.now() - this.startedAt) / 1000));
+    const mrBlob = await this.stopMediaRecorder();
+    this.recording = false;
+    const pcm = this.pcm;
+    const pcmRate = this.pcmRate;
+    const ctx = this.audioCtx;
+    await this.cleanupStream();
+
+    let blob = null;
+    let mime = '';
+    let engine = '';
+    const mrType = (mrBlob && mrBlob.type) || this.mime || '';
+    if (mrBlob && mrBlob.size > 1200 && !this.mrFailed && micMimeAcceptable(mrType)) {
+      const ok = pcm.length ? await micBlobDecodes(mrBlob, ctx) : true;
+      if (ok) { blob = mrBlob; mime = mrType; engine = 'mediarecorder'; }
+    }
+    if (!blob && pcm.length) {
+      blob = micEncodeWav(micDownsample(pcm, pcmRate, 16000), 16000);
+      mime = 'audio/wav';
+      engine = 'wav';
+    }
+    if (!blob && mrBlob && mrBlob.size > 0) { blob = mrBlob; mime = mrType || 'audio/webm'; engine = 'mediarecorder-unverified'; }
+    this.pcm = [];
+    this.chunks = [];
+    if (!blob) {
+      showToast('🎙️ No audio was captured — please tap Record and try again.');
+      return null;
+    }
+
+    this.lastBlob = blob;
+    this.lastMime = mime;
+    this.lastEngine = engine;
+    this.lastDurationSec = durSec;
+    this.lastSilent = this.peakKnown && this.peak < MIC_SILENCE_PEAK;
+    this.lastUrl = URL.createObjectURL(blob);
+    if (this.lastSilent) showToast('🔇 That recording was silent — check your mic isn’t muted, then tap Retry.');
+    return { blob, url: this.lastUrl, mimeType: mime, durationSeconds: durSec, silent: this.lastSilent, engine };
   }
 
   async cleanupStream() {
     cancelAnimationFrame(this.rafId);
     clearInterval(this.clockTimer);
     clearTimeout(this.autoStopTimer);
+    clearTimeout(this.silenceTimer);
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      try { this.mediaRecorder.stop(); } catch (e) {}
+    }
+    this.mediaRecorder = null;
+    try { if (this.proc) { this.proc.onaudioprocess = null; this.proc.disconnect(); } } catch (e) {}
+    try { if (this.sink) this.sink.disconnect(); } catch (e) {}
+    try { if (this.source) this.source.disconnect(); } catch (e) {}
+    try { if (this.analyser) this.analyser.disconnect(); } catch (e) {}
+    this.proc = null; this.sink = null; this.source = null; this.analyser = null;
     if (this.stream) {
-      try { this.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      try { this.stream.getTracks().forEach(t => { t.onended = null; t.stop(); }); } catch (e) {}
       this.stream = null;
     }
-    if (this.audioCtx) {
-      try { await this.audioCtx.close(); } catch (e) {}
-      this.audioCtx = null;
-      this.analyser = null;
-    }
+    this.recording = false;
   }
 }
+
+/* ---------- Comfort drawer: microphone picker + live level test ---------- */
+const micTester = { stream: null, raf: 0, analyser: null, src: null };
+
+async function refreshMicPicker() {
+  const sel = $('micDeviceSelect');
+  if (!sel) return;
+  const devices = await MicEngine.listDevices();
+  clearEl(sel);
+  const def = el('option', '🎙️ Default microphone');
+  def.value = '';
+  sel.appendChild(def);
+  devices.forEach((d, i) => {
+    if (!d.deviceId || d.deviceId === 'default' || d.deviceId === 'communications') return;
+    const o = el('option', d.label || ('Microphone ' + (i + 1)));
+    o.value = d.deviceId;
+    sel.appendChild(o);
+  });
+  sel.value = Array.from(sel.options).some(o => o.value === MicEngine.deviceId) ? MicEngine.deviceId : '';
+}
+
+function stopMicTest() {
+  cancelAnimationFrame(micTester.raf);
+  try { if (micTester.src) micTester.src.disconnect(); } catch (e) {}
+  if (micTester.stream) { try { micTester.stream.getTracks().forEach(t => t.stop()); } catch (e) {} }
+  micTester.stream = null; micTester.src = null; micTester.analyser = null;
+  const bar = $('micLevelFill'); if (bar) bar.style.width = '0%';
+  const btn = $('micTestBtn'); if (btn) btn.textContent = '🎤 Test my microphone';
+}
+
+async function startMicTest() {
+  AudioOut.unlock();
+  MicEngine.primeFromGesture();
+  if (micTester.stream) { stopMicTest(); return; }
+  const status = $('micTestStatus');
+  const btn = $('micTestBtn');
+  try {
+    if (status) status.textContent = 'Starting…';
+    const stream = await MicEngine.acquire(() => { if (status) status.textContent = '👆 Tap “Allow” on the microphone pop-up'; });
+    micTester.stream = stream;
+    const ctx = MicEngine.getCtx();
+    if (btn) btn.textContent = '⏹ Stop test';
+    await refreshMicPicker();
+    const track = stream.getAudioTracks()[0];
+    if (status) status.textContent = '✅ Using: ' + ((track && track.label) || 'your microphone') + ' — say something!';
+    if (!ctx) return;
+    micTester.src = ctx.createMediaStreamSource(stream);
+    micTester.analyser = ctx.createAnalyser();
+    micTester.analyser.fftSize = 512;
+    micTester.src.connect(micTester.analyser);
+    const buf = new Float32Array(micTester.analyser.fftSize);
+    let heard = false;
+    const t0 = Date.now();
+    const loop = () => {
+      if (!micTester.analyser) return;
+      micTester.analyser.getFloatTimeDomainData ? micTester.analyser.getFloatTimeDomainData(buf) : null;
+      let pk = 0;
+      for (let i = 0; i < buf.length; i++) { const a = Math.abs(buf[i]); if (a > pk) pk = a; }
+      const pct = Math.min(100, Math.round(Math.sqrt(pk) * 130));
+      const bar = $('micLevelFill'); if (bar) bar.style.width = pct + '%';
+      if (pk > 0.05 && !heard) { heard = true; if (status) status.textContent = '🎉 Perfect — we can hear you clearly!'; }
+      if (!heard && Date.now() - t0 > 4000 && status) status.textContent = '🔇 Nothing heard yet — unmute your mic or pick another one above.';
+      micTester.raf = requestAnimationFrame(loop);
+    };
+    loop();
+    setTimeout(() => { if (micTester.stream === stream) stopMicTest(); }, 20000);
+  } catch (err) {
+    stopMicTest();
+    if (status) status.textContent = err.micTitle ? ('⚠️ ' + err.micTitle) : '⚠️ Microphone unavailable';
+    showMicHelp(err.micCode ? err : micClassifyError(err), startMicTest);
+  }
+}
+
+function mountMicDrawerSection() {
+  ensureMicUiStyles();
+  const sel = $('micDeviceSelect');
+  const btn = $('micTestBtn');
+  if (!sel || !btn || sel.dataset.bound) return;
+  sel.dataset.bound = '1';
+  sel.addEventListener('change', () => {
+    MicEngine.setDevice(sel.value);
+    if (micTester.stream) { stopMicTest(); startMicTest(); }
+    showToast('🎙️ Microphone saved for this device');
+  });
+  btn.addEventListener('click', startMicTest);
+  refreshMicPicker();
+}
+
+// Unlock audio output on the very first interaction anywhere (AI voices then play instantly, even on iPhone).
+['pointerdown', 'touchend', 'keydown'].forEach(evt => {
+  window.addEventListener(evt, function onFirst() {
+    AudioOut.unlock();
+    window.removeEventListener(evt, onFirst, true);
+  }, true);
+});
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountMicDrawerSection);
+else mountMicDrawerSection();
+
 
 const missionRec = new VoiceRecorderController('mRecBars');
 const plMicRec = new VoiceRecorderController('plMicBars');
@@ -389,6 +981,8 @@ function stopAllRecordersAndAudio() {
     try { activeAudioPlayer.pause(); } catch (e) {}
     activeAudioPlayer = null;
   }
+  try { AudioOut.stop(); } catch (e) {}
+  try { if (typeof stopMicTest === 'function') stopMicTest(); } catch (e) {}
   const prev = $('mPreviewAudio');
   if (prev) { try { prev.pause(); } catch (e) {} }
 }
@@ -1632,6 +2226,7 @@ $('mRecStartBtn').addEventListener('click', async () => {
       },
       onAutoStop: rec => {
         if (rec) onMissionRecordingCaptured(rec);
+        else resetMissionMicUI(state.tasks[state.qIdx]);
       }
     });
     $('missionMicBox').classList.add('recording');
@@ -1649,7 +2244,9 @@ $('mRecStartBtn').addEventListener('click', async () => {
 
 function onMissionRecordingCaptured(rec) {
   $('missionMicBox').classList.remove('recording');
-  $('mRecStatus').textContent = '✅ Captured ' + rec.durationSeconds + 's — Listen back or Submit to AI Coach!';
+  $('mRecStatus').textContent = rec.silent
+    ? '🔇 We couldn’t hear anything — check your mic isn’t muted, then tap Retry.'
+    : '✅ Captured ' + rec.durationSeconds + 's — Listen back or Submit to AI Coach!';
   $('mRecStopBtn').classList.add('hidden');
   $('mRecPlayBtn').classList.remove('hidden');
   $('mRecRetryBtn').classList.remove('hidden');
@@ -1662,6 +2259,7 @@ function onMissionRecordingCaptured(rec) {
 $('mRecStopBtn').addEventListener('click', async () => {
   const rec = await missionRec.stop();
   if (rec) onMissionRecordingCaptured(rec);
+  else resetMissionMicUI(state.tasks[state.qIdx]);
 });
 
 $('mRecPlayBtn').addEventListener('click', () => {
@@ -1685,7 +2283,11 @@ $('mRecSubmitBtn').addEventListener('click', async () => {
   $('lessonErr').textContent = '';
   $('mRecSubmitBtn').disabled = true;
   $('mRecSubmitBtn').textContent = '⏳ Transcribing & Coaching…';
-  $('mRecStatus').textContent = '🤖 Whisper & AI Speaking Coach are analyzing your voice…';
+  $('mRecStatus').textContent = '🎧 Listening to your answer…';
+  const coachStages = [
+    setTimeout(() => { $('mRecStatus').textContent = '🤖 Your AI Speaking Coach is writing feedback…'; }, 2600),
+    setTimeout(() => { $('mRecStatus').textContent = '✨ Almost there — polishing your tips…'; }, 5600)
+  ];
 
   try {
     const b64 = await blobToBase64(missionRec.lastBlob);
@@ -1728,6 +2330,7 @@ $('mRecSubmitBtn').addEventListener('click', async () => {
     $('mRecSubmitBtn').textContent = '✨ Submit to AI Coach →';
     $('mRecStatus').textContent = 'Ready to submit — click Submit to AI Coach to retry.';
   } finally {
+    coachStages.forEach(clearTimeout);
     state.busy = false;
   }
 });
@@ -1884,11 +2487,19 @@ $('plMicRecordBtn').addEventListener('click', async () => {
       onTick: sec => { $('plMicTimer').textContent = '0:0' + Math.max(0, 5 - sec); },
       onAutoStop: rec => {
         $('plMicStudio').classList.remove('recording');
-        if (rec) {
+        if (rec && !rec.silent) {
           $('plMicStatus').textContent = '✅ 5s sample captured — play back to confirm!';
           $('plMicPlayBtn').classList.remove('hidden');
           $('plMicRetryBtn').classList.remove('hidden');
           $('plMicConfirmBtn').classList.remove('hidden');
+        } else if (rec && rec.silent) {
+          $('plMicStatus').textContent = '🔇 We couldn’t hear you — unmute your mic (or pick another in ⚙️ Lab Comfort) and tap Retry.';
+          $('plMicPlayBtn').classList.remove('hidden');
+          $('plMicRetryBtn').classList.remove('hidden');
+          $('plMicConfirmBtn').classList.add('hidden');
+        } else {
+          $('plMicStatus').textContent = 'No audio captured — tap Record 5s Test again.';
+          $('plMicRecordBtn').classList.remove('hidden');
         }
       }
     });
@@ -1900,11 +2511,7 @@ $('plMicRecordBtn').addEventListener('click', async () => {
 });
 
 $('plMicPlayBtn').addEventListener('click', () => {
-  if (plMicRec.lastUrl) {
-    if (activeAudioPlayer) { try { activeAudioPlayer.pause(); } catch (e) {} }
-    activeAudioPlayer = new Audio(plMicRec.lastUrl);
-    activeAudioPlayer.play().catch(() => {});
-  }
+  if (plMicRec.lastUrl) AudioOut.play(plMicRec.lastUrl);
 });
 
 $('plMicRetryBtn').addEventListener('click', () => {
@@ -2001,6 +2608,7 @@ async function startPlacementTaskRecording() {
       },
       onAutoStop: rec => {
         if (rec) uploadPlacementTaskRecording(rec);
+        else placementRecordingFailed();
       }
     });
   } catch (err) {
@@ -2011,10 +2619,19 @@ async function startPlacementTaskRecording() {
   }
 }
 
+function placementRecordingFailed() {
+  $('plTaskStudio').classList.remove('recording');
+  $('plFinishRecBtn').classList.add('hidden');
+  $('plStartRecNowBtn').classList.remove('hidden');
+  $('plStartRecNowBtn').disabled = false;
+  $('plErrBox').textContent = 'No audio was captured. Check your microphone, then tap Start Recording Now.';
+}
+
 $('plFinishRecBtn').addEventListener('click', async () => {
   $('plFinishRecBtn').disabled = true;
   const rec = await plTaskRec.stop();
   if (rec) await uploadPlacementTaskRecording(rec);
+  else placementRecordingFailed();
 });
 
 async function uploadPlacementTaskRecording(rec) {
@@ -6597,7 +7214,8 @@ $('rpStartBtn').addEventListener('click', async () => {
   $('rpSetupErr').textContent = '';
   try {
     const res = await rpc('roleplayStart', {
-      auth: state.code, scenarioId: rpState.selected.id, mode: rpState.mode, scaffold: rpState.scaffold, players
+      auth: state.code, scenarioId: rpState.selected.id, mode: rpState.mode, scaffold: rpState.scaffold, players,
+      inlineVoices: true
     });
     if (!res || !res.ok) throw new Error((res && res.error) || 'Could not start this scene.');
     $('rpSetupModal').classList.add('hidden');
@@ -6611,7 +7229,7 @@ $('rpStartBtn').addEventListener('click', async () => {
     showView('roleplayStageView');
     renderRpStage();
     rpSetTurnEnabled(false);
-    await rpPlayTurnVoices(0);
+    await rpPlayTurnVoices(0, res.audioTurn === 0 ? res.audio : null);
     rpPrepareTurn();
   } catch (err) {
     $('rpSetupErr').textContent = err.message || 'Could not start this scene.';
@@ -6770,9 +7388,7 @@ $('rpLineHearBtn').addEventListener('click', () => {
 /* ---------- Voices ---------- */
 function rpPlayUrl(url) {
   if (!url) return;
-  if (activeAudioPlayer) { try { activeAudioPlayer.pause(); } catch (e) {} }
-  activeAudioPlayer = new Audio(url);
-  activeAudioPlayer.play().catch(() => {});
+  AudioOut.play(url);
 }
 
 function rpVoiceProfile(roleId) {
@@ -6805,17 +7421,9 @@ function rpSpeakBrowser(text, roleId) {
 function rpSpeakLine(line, dataUrl) {
   const url = dataUrl || rpState.audioCache[line.id];
   if (!url) return rpSpeakBrowser(line.text, line.roleId);
-  return new Promise(resolve => {
-    if (activeAudioPlayer) { try { activeAudioPlayer.pause(); } catch (e) {} }
-    const p = new Audio(url);
-    activeAudioPlayer = p;
-    rpState.voicePlayer = p;
-    let done = false;
-    const finish = () => { if (!done) { done = true; resolve(); } };
-    p.onended = finish;
-    p.onerror = () => { rpSpeakBrowser(line.text, line.roleId).then(finish); };
-    setTimeout(finish, 4000 + String(line.text).length * 110);
-    p.play().catch(() => { rpSpeakBrowser(line.text, line.roleId).then(finish); });
+  rpState.voicePlayer = AudioOut.ensure();
+  return AudioOut.play(url, { maxMs: 4000 + String(line.text).length * 110 }).then(ok => {
+    if (!ok && !rpState.skipVoices) return rpSpeakBrowser(line.text, line.roleId);
   });
 }
 
@@ -6829,7 +7437,7 @@ function rpHighlight(line, on) {
   });
 }
 
-async function rpPlayTurnVoices(turn) {
+async function rpPlayTurnVoices(turn, prefetched) {
   const s = rpState.session;
   if (!s) return;
   const lines = (s.history || []).filter(h => h.turn === turn && h.kind === 'ai');
@@ -6838,13 +7446,15 @@ async function rpPlayTurnVoices(turn) {
   $('rpThinking').classList.remove('hidden');
   $('rpThinkingText').textContent = '🔊 The cast is getting ready to speak…';
   $('rpSkipVoiceBtn').classList.remove('hidden');
-  let audio = {};
-  if (rpState.voiceMode === 'openai') {
+  let audio = Object.assign({}, prefetched || {});
+  Object.keys(audio).forEach(k => { rpState.audioCache[k] = audio[k]; });
+  const missing = lines.some(l => !audio[l.id]);
+  if (rpState.voiceMode === 'openai' && missing) {
     try {
       const res = await rpc('roleplayVoices', { auth: state.code, sessionId: s.sessionId, turn });
-      audio = (res && res.audio) || {};
+      Object.assign(audio, (res && res.audio) || {});
       Object.keys(audio).forEach(k => { rpState.audioCache[k] = audio[k]; });
-    } catch (e) { audio = {}; }
+    } catch (e) {}
   }
   for (const line of lines) {
     if (rpState.skipVoices || state.activeView !== 'roleplayStageView') break;
@@ -6870,7 +7480,7 @@ $('rpRecBtn').addEventListener('click', async () => {
     await rpRec.start({
       maxSeconds: 60,
       onTick: sec => { $('rpRecTimer').textContent = rpClock(sec); },
-      onAutoStop: rec => { if (rec) rpOnCaptured(rec); }
+      onAutoStop: rec => { if (rec) rpOnCaptured(rec); else rpResetMicUI(); }
     });
     $('rpMicBox').classList.add('recording');
     $('rpRecStatus').textContent = '🔴 Recording… say your line!';
@@ -6884,7 +7494,9 @@ $('rpRecBtn').addEventListener('click', async () => {
 
 function rpOnCaptured(rec) {
   $('rpMicBox').classList.remove('recording');
-  $('rpRecStatus').textContent = '✅ Captured ' + rec.durationSeconds + 's — listen back or say it in the scene!';
+  $('rpRecStatus').textContent = rec.silent
+    ? '🔇 We couldn’t hear anything — check your mic isn’t muted, then tap Retry.'
+    : '✅ Captured ' + rec.durationSeconds + 's — listen back or say it in the scene!';
   $('rpStopBtn').classList.add('hidden');
   $('rpRecBtn').classList.add('hidden');
   ['rpPlayBackBtn', 'rpRetryBtn', 'rpSendBtn'].forEach(id => $(id).classList.remove('hidden'));
@@ -6893,6 +7505,7 @@ function rpOnCaptured(rec) {
 $('rpStopBtn').addEventListener('click', async () => {
   const rec = await rpRec.stop();
   if (rec) rpOnCaptured(rec);
+  else rpResetMicUI();
 });
 $('rpPlayBackBtn').addEventListener('click', () => rpPlayUrl(rpRec.lastUrl));
 $('rpRetryBtn').addEventListener('click', () => rpResetMicUI());
@@ -6905,15 +7518,21 @@ $('rpSendBtn').addEventListener('click', async () => {
   $('rpStageErr').textContent = '';
   $('rpSendBtn').textContent = '⏳ Listening…';
   $('rpThinking').classList.remove('hidden');
-  $('rpThinkingText').textContent = '🎧 Listening to your line… the cast is thinking…';
+  $('rpThinkingText').textContent = '🎧 Listening to your line…';
+  const stageTimers = [
+    setTimeout(() => { $('rpThinkingText').textContent = '🎭 The cast is improvising a reply…'; }, 2600),
+    setTimeout(() => { $('rpThinkingText').textContent = '🔊 Warming up the voices…'; }, 5200)
+  ];
   const blob = rpRec.lastBlob;
   const speakerRole = rpRoleOf(s.nextRoleId) || {};
   try {
     const b64 = await blobToBase64(blob);
     const res = await rpc('roleplayTakeTurn', {
       auth: state.code, sessionId: s.sessionId, roleId: s.nextRoleId,
-      base64Audio: b64, mimeType: rpRec.lastMime, durationSeconds: rpRec.lastDurationSec, scaffold: rpState.scaffold
+      base64Audio: b64, mimeType: rpRec.lastMime, durationSeconds: rpRec.lastDurationSec, scaffold: rpState.scaffold,
+      inlineVoices: true
     });
+    stageTimers.forEach(clearTimeout);
     if (!res || !res.ok) throw new Error((res && res.error) || 'Could not send your line.');
     if (res.retry || res.flagged) {
       $('rpThinking').classList.add('hidden');
@@ -6936,13 +7555,14 @@ $('rpSendBtn').addEventListener('click', async () => {
     $('rpThinking').classList.add('hidden');
     rpResetMicUI();
     rpSetTurnEnabled(false);
-    await rpPlayTurnVoices(res.session.lastTurn);
+    await rpPlayTurnVoices(res.session.lastTurn, res.audioTurn === res.session.lastTurn ? res.audio : null);
     if (res.session.finished) {
       await rpFinishScene();
     } else {
       rpPrepareTurn();
     }
   } catch (err) {
+    stageTimers.forEach(clearTimeout);
     $('rpThinking').classList.add('hidden');
     $('rpStageErr').textContent = err.message || 'Could not send your line.';
     rpSetTurnEnabled(true);
@@ -7084,7 +7704,7 @@ $('jVcRecBtn').addEventListener('click', async () => {
     await jigsawVoiceRec.start({
       maxSeconds: 50,
       onTick: sec => { $('jVcTimer').textContent = formatAudioClock(sec); },
-      onAutoStop: rec => { if (rec) onJigsawVoiceCaptured(rec); }
+      onAutoStop: rec => { if (rec) onJigsawVoiceCaptured(rec); else jigsawVoiceReset(); }
     });
     $('jVoiceClueBox').classList.add('recording');
     $('jVcStatus').textContent = '🔴 Recording your Expert Clue… Explain your part in your own words!';
@@ -7107,17 +7727,21 @@ function onJigsawVoiceCaptured(rec) {
   $('jVcUploadBtn').classList.remove('hidden');
 }
 
+function jigsawVoiceReset() {
+  $('jVoiceClueBox').classList.remove('recording');
+  $('jVcStatus').textContent = 'No audio captured — tap Record to try again.';
+  $('jVcStopBtn').classList.add('hidden');
+  $('jVcRecBtn').classList.remove('hidden');
+}
+
 $('jVcStopBtn').addEventListener('click', async () => {
   const rec = await jigsawVoiceRec.stop();
   if (rec) onJigsawVoiceCaptured(rec);
+  else jigsawVoiceReset();
 });
 
 $('jVcPlayBtn').addEventListener('click', () => {
-  if (jigsawVoiceRec.lastUrl) {
-    if (activeAudioPlayer) { try { activeAudioPlayer.pause(); } catch (e) {} }
-    activeAudioPlayer = new Audio(jigsawVoiceRec.lastUrl);
-    activeAudioPlayer.play().catch(() => {});
-  }
+  if (jigsawVoiceRec.lastUrl) AudioOut.play(jigsawVoiceRec.lastUrl);
 });
 
 $('jVcUploadBtn').addEventListener('click', async () => {

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=3.2.0">
 </head>
 <body>
 
@@ -1279,6 +1279,13 @@
   <div class="seg" data-set="lh"><button data-v="1.6">Tight</button><button data-v="1.85">Normal</button><button data-v="2.2">Airy</button></div>
   <div class="muted" style="font-size:13px;font-weight:700">Story Audio Speed</div>
   <div class="seg" data-set="rate"><button data-v="0.8">0.8×</button><button data-v="1">1.0×</button><button data-v="1.2">1.2×</button></div>
+  <div class="muted" style="font-size:13px;font-weight:700">Microphone</div>
+  <div class="mic-test-row">
+    <select id="micDeviceSelect" aria-label="Choose microphone"><option value="">🎙️ Default microphone</option></select>
+    <button type="button" id="micTestBtn" class="btn ghost">🎤 Test my microphone</button>
+  </div>
+  <div class="mic-level"><i id="micLevelFill"></i></div>
+  <div id="micTestStatus" class="mic-test-status">Pick a microphone and tap Test to check it works.</div>
 </aside>
 
 <!-- SPEAKING ACHIEVEMENTS MODAL -->
@@ -1343,8 +1350,8 @@
 <div id="toast" class="toast hidden"></div>
 <div id="gasBridgeHolder" style="position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden" aria-hidden="true"></div>
 
-<script src="media_catalog.js"></script>
-<script src="config.js"></script>
-<script src="app.js"></script>
+<script src="media_catalog.js?v=3.2.0"></script>
+<script src="config.js?v=3.2.0"></script>
+<script src="app.js?v=3.2.0"></script>
 </body>
 </html>

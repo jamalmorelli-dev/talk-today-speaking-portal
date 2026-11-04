@@ -8698,6 +8698,7 @@ const jamState = {
   lastAppliedSyncKey: '',
   lastAppliedStepKey: '',
   lastAppliedSpotlightKey: '',
+  openingLessonId: '',
   projectorPreviewActive: false
 };
 
@@ -8746,10 +8747,14 @@ async function pollJamLoginBanner() {
     if (!banner) return;
     if (!res || !res.ok || !res.active || !Array.isArray(res.sessions) || !res.sessions.length) {
       banner.classList.add('hidden');
+      if ($('parentEmail')) $('parentEmail').classList.remove('hidden');
       return;
     }
     const sess = res.primary || res.sessions[0];
     banner.classList.remove('hidden');
+    if ($('parentEmail') && sess.allowCodeOnlyLogin) {
+      $('parentEmail').classList.add('hidden');
+    }
     const cName = sess.targetClass || sess.className || 'ALL';
     const tName = sess.targetTeacher || sess.teacher || 'ALL';
     const targetDesc = (cName && cName !== 'ALL')
@@ -8854,21 +8859,25 @@ async function joinLiveJamClassByCode(studentCode) {
 }
 
 /* ---------- 2. Student In-App Live JAM Autopilot & Lockstep Sync ---------- */
+async function pollJamStudentAutopilotOnce() {
+  if (jamState.directorMode || !state.portalContext || !state.portalContext.code || state.activeView === 'loginView') return;
+  try {
+    const res = await rpc('jamStudentPoll', {
+      auth: state.code,
+      code: state.portalContext.code,
+      session: state.portalContext.session || (state.code && state.code.session) || ''
+    });
+    if (res && res.ok) {
+      applyIncomingJamStateToStudent(res.jamState || { active: false }, false);
+    }
+  } catch (e) {}
+}
+
 function startJamStudentAutopilotPolling() {
   stopJamStudentAutopilotPolling();
   if (jamState.directorMode) return;
-  jamState.studentPollTimer = setInterval(async () => {
-    if (jamState.directorMode || !state.portalContext || !state.portalContext.code || state.activeView === 'loginView') return;
-    try {
-      const res = await rpc('jamStudentPoll', {
-        auth: state.code,
-        code: state.portalContext.code
-      });
-      if (res && res.ok) {
-        applyIncomingJamStateToStudent(res.jamState || { active: false }, false);
-      }
-    } catch (e) {}
-  }, 4000);
+  setTimeout(pollJamStudentAutopilotOnce, 600);
+  jamState.studentPollTimer = setInterval(pollJamStudentAutopilotOnce, 3000);
 }
 
 function stopJamStudentAutopilotPolling() {
@@ -8943,13 +8952,20 @@ function applyIncomingJamStateToStudent(incoming, forceSyncNow) {
   if (actType === 'LESSON' && lessonId) {
     const curLesObj = state.currentLesson || state.lesson || null;
     const currentLessonId = (curLesObj && (curLesObj.id || curLesObj.lessonId)) || '';
+    if (jamState.openingLessonId === lessonId) {
+      return;
+    }
     if (currentLessonId !== lessonId || (forceSyncNow && state.activeView !== 'exerciseView')) {
       if (typeof openExercise === 'function') {
         jamState.lastAppliedSyncKey = syncKey;
+        jamState.openingLessonId = lessonId;
         openExercise(lessonId).then(() => {
+          jamState.openingLessonId = '';
           const latestStep = (jamState.activeClassState && jamState.activeClassState.lockedStep) || step;
           applyLockedStepInsideLesson(latestStep);
-        }).catch(() => {});
+        }).catch(() => {
+          jamState.openingLessonId = '';
+        });
         return;
       }
     } else if (forceSyncNow || stepKey !== jamState.lastAppliedStepKey) {
@@ -8982,7 +8998,7 @@ function applyLockedStepInsideLesson(step) {
   const stepFn = isJamLessonStepFunc();
   if (s === 'READ') {
     if (state.activeView !== 'exerciseView') showView('exerciseView');
-    const pBox = $('passageBox') || $('passage');
+    const pBox = $('passage');
     if (pBox && typeof pBox.scrollIntoView === 'function') {
       pBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -9003,7 +9019,8 @@ function applyLockedStepInsideLesson(step) {
 function updateJamDirectorBarUI() {
   const bar = $('jamDirectorBar');
   if (!bar) return;
-  bar.classList.toggle('hidden', !jamState.directorMode);
+  const hideBarOnJamIntro = (typeof state !== 'undefined' && state.activeView === 'jamView');
+  bar.classList.toggle('hidden', !jamState.directorMode || hideBarOnJamIntro);
   if (!jamState.directorMode) return;
 
   const st = jamState.activeClassState;
@@ -9048,7 +9065,9 @@ function updateJamDirectorBarUI() {
     $('jamSessionStatusChip').textContent = isLive ? '🟢 LIVE AUTOPILOT ON' : '⚪ STANDBY';
   }
   if ($('jamStartSessionBtn')) {
-    $('jamStartSessionBtn').textContent = isLive ? '🔄 Update Live JAM Class' : '🟢 START LIVE JAM CLASS';
+    $('jamStartSessionBtn').textContent = isLive
+      ? '🔄 PUSH SELECTED LESSON TO ALL SCREENS'
+      : '🟢 START CLASS & PUSH TO ALL SCREENS';
   }
   if ($('jamEndSessionBtn')) {
     $('jamEndSessionBtn').classList.toggle('hidden', !isLive);
@@ -9335,9 +9354,9 @@ async function openProjectorLessonInJamMode() {
 
   // Ensure staff preview session is initialized so openExercise works smoothly on the projector
   if (!state.portalContext || !state.code) {
-    let pRes = await rpc('portalOpen', { code: 'DIRECTOR', email: '' }).catch(() => null);
+    let pRes = await rpc('portalOpen', { code: 'jamalmorelli', email: '' }).catch(() => null);
     if (!pRes || !pRes.ok) {
-      pRes = await rpc('portalStaffPreview', {}).catch(() => null);
+      pRes = await rpc('portalOpen', { code: 'DIRECTOR', email: '' }).catch(() => null);
     }
     if (pRes && pRes.ok) {
       state.portalContext = {
@@ -9426,7 +9445,7 @@ function renderJamStudentMatrix(data) {
   if (!data) return;
   const sum = data.summary || {};
   const totalCount = sum.enrolledCount != null ? sum.enrolledCount : (sum.rosterCount || 0);
-  const onlineStr = (sum.onlineCount || 0) + ' / ' + totalCount;
+  const onlineStr = '🟢 ' + (sum.onlineCount || 0) + ' / ' + totalCount + ' Online';
   if ($('jamTileOnline')) $('jamTileOnline').textContent = onlineStr;
   if ($('jamBarOnlineChip')) $('jamBarOnlineChip').textContent = '🟢 ' + (sum.onlineCount || 0) + ' Online';
   if ($('jamTileInLesson')) $('jamTileInLesson').textContent = String(sum.readingNowCount != null ? sum.readingNowCount : (sum.readingCount || 0));
@@ -9691,13 +9710,18 @@ if ($('jamLessonSelect')) {
 if ($('jamStartSessionBtn')) {
   $('jamStartSessionBtn').addEventListener('click', async () => {
     try {
-      await syncJamClassStateToServer({
+      const pTxt = ($('jamPromptInput') && $('jamPromptInput').value.trim()) ||
+        (jamState.activeClassState && jamState.activeClassState.promptText) || '';
+      const st = await syncJamClassStateToServer({
         active: true,
         activityType: 'LESSON',
         lessonId: jamState.selectedLessonId || '',
-        lockedStep: (jamState.activeClassState && jamState.activeClassState.lockedStep) || 'FREE'
+        lockedStep: (jamState.activeClassState && jamState.activeClassState.lockedStep && jamState.activeClassState.lockedStep !== 'FREE')
+          ? jamState.activeClassState.lockedStep
+          : 'READ',
+        promptText: pTxt
       });
-      showToast('🟢 Live JAM Class is now ACTIVE! Students can log in with ONLY their 4-digit code.');
+      showToast('🟢 Live JAM Class ACTIVE! Pushed “' + (st.lessonTitle || st.lessonId || 'Lesson') + '” to all screens.');
     } catch (err) {
       if ($('jamErrBox')) $('jamErrBox').textContent = err.message;
     }

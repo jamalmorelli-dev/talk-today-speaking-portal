@@ -1245,8 +1245,50 @@ h2 { font-size: 20px; letter-spacing: -.01em; margin: 0 0 12px; }
 
 
 /* =========================================================================
-   JAM VERSION — LIVE WHOLE-CLASS DIRECTOR & AUTOPILOT EDITION (v1.0)
+   JAM VERSION — ULTRA-SIMPLE "BASIC AF" INTRO & DIRECTOR UI (v2.0)
    ========================================================================= */
+/* Make Student / App Login Card (#loginView) BASIC AF: zero clutter! */
+#loginCard .portal-notice,
+#loginCard #portalStudentWrap > p,
+#loginCard #portalTeacherHead > p,
+#loginCard #portalSupportLink,
+#loginCard #staffPreviewBtn,
+#loginCard #openExaminerFromLoginBtn,
+#loginCard .role-tabs {
+  display: none !important;
+}
+#loginCard {
+  max-width: 440px !important;
+  padding: 28px 26px !important;
+}
+#loginCard #portalStudentWrap h2 {
+  font-size: 24px !important;
+  margin: 6px 0 14px !important;
+}
+#loginCard #studentCode {
+  font-size: 22px !important;
+  font-weight: 900 !important;
+  text-align: center !important;
+  padding: 14px 16px !important;
+  letter-spacing: 0.08em !important;
+  border: 2px solid rgba(245, 158, 11, 0.55) !important;
+}
+#loginCard #loginSubmitBtn {
+  padding: 14px 18px !important;
+  font-size: 16px !important;
+  font-weight: 900 !important;
+  margin-top: 6px !important;
+}
+#loginCard #openJamFromLoginBtn {
+  padding: 13px 16px !important;
+  font-size: 14px !important;
+  margin-top: 12px !important;
+}
+
+.jam-basic-shell {
+  max-width: 780px;
+  margin: 18px auto 40px;
+}
 .jam-director-bar {
   position: sticky; top: 0; z-index: 220;
   background: linear-gradient(90deg, #090d16 0%, #1e1b4b 50%, #064e3b 100%);
@@ -1262,7 +1304,7 @@ h2 { font-size: 20px; letter-spacing: -.01em; margin: 0 0 12px; }
 }
 .jam-badge {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 4px 11px; border-radius: 99px; font-size: 11px; font-weight: 900;
+  padding: 5px 12px; border-radius: 99px; font-size: 11.5px; font-weight: 900;
   letter-spacing: .05em; text-transform: uppercase;
   background: linear-gradient(135deg, #f59e0b, #ea580c); color: #090d16;
   box-shadow: 0 2px 10px rgba(245, 158, 11, .45);
@@ -1287,7 +1329,7 @@ h2 { font-size: 20px; letter-spacing: -.01em; margin: 0 0 12px; }
 .jam-top-launch-btn {
   background: linear-gradient(135deg, #f59e0b, #d97706) !important;
   color: #090d16 !important; border: 1.5px solid #fef3c7 !important;
-  font-weight: 900 !important; font-size: 12px !important; padding: 6px 12px !important;
+  font-weight: 900 !important; font-size: 12.5px !important; padding: 6px 14px !important;
   box-shadow: 0 2px 10px rgba(245, 158, 11, .35);
 }
 .jam-launch-cta {
@@ -1297,8 +1339,8 @@ h2 { font-size: 20px; letter-spacing: -.01em; margin: 0 0 12px; }
 }
 .jam-cta-gold {
   background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%) !important;
-  color: #090d16 !important; border: 1.5px solid #fef3c7 !important;
-  font-weight: 900 !important; box-shadow: 0 6px 18px rgba(245, 158, 11, .35);
+  color: #090d16 !important; border: 2px solid #fef3c7 !important;
+  font-weight: 900 !important; box-shadow: 0 8px 24px rgba(245, 158, 11, .4);
 }
 .jam-radar-cta {
   background: linear-gradient(135deg, #f59e0b, #ea580c) !important;
@@ -1338,33 +1380,66 @@ h2 { font-size: 20px; letter-spacing: -.01em; margin: 0 0 12px; }
   border: 1.5px solid #fbbf24;
 }
 
-/* JAM Director Hero & Deck */
+/* JAM Director Minimal Hero Card */
 .jam-hero-card {
-  background: linear-gradient(135deg, #090d16 0%, #1e1b4b 55%, #064e3b 100%);
-  border: 2px solid #f59e0b; border-radius: 18px;
-  padding: 18px 20px; color: #fff; box-shadow: 0 12px 30px rgba(0,0,0,.35);
+  background: linear-gradient(145deg, #090d16 0%, #172554 55%, #064e3b 100%);
+  border: 2.5px solid #f59e0b; border-radius: 22px;
+  padding: 26px 28px; color: #fff; box-shadow: 0 18px 42px rgba(0,0,0,.45);
 }
-.jam-hero-top {
-  display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap;
+.jam-basic-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,.14);
 }
-.jam-hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.jam-basic-title {
+  margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -0.02em; color: #fff;
+}
+.jam-basic-step-box {
+  margin-top: 18px;
+}
+.jam-basic-step-label {
+  font-size: 12px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase;
+  color: #fde68a; margin-bottom: 8px;
+}
+.jam-basic-row {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+}
+.jam-big-select {
+  flex: 1; min-width: 200px; padding: 13px 14px; border-radius: 12px;
+  background: rgba(15, 23, 42, 0.9); color: #fff; border: 1.5px solid rgba(255,255,255,.26);
+  font-size: 15px; font-weight: 800; cursor: pointer;
+}
+.jam-big-select:focus { border-color: #f59e0b; outline: none; }
+.jam-big-side-btn {
+  padding: 13px 16px !important; font-size: 14px !important; font-weight: 800 !important;
+  border-radius: 12px !important; background: rgba(255,255,255,.1) !important;
+  color: #fff !important; border: 1.5px solid rgba(255,255,255,.25) !important;
+}
+.jam-basic-go-row {
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: stretch; margin-top: 22px;
+}
+.jam-giant-go-btn {
+  flex: 2; min-width: 260px; padding: 18px 22px !important;
+  font-size: 18px !important; border-radius: 14px !important; letter-spacing: -0.01em;
+}
+.jam-giant-proj-btn {
+  flex: 1; min-width: 180px; padding: 18px 18px !important;
+  font-size: 16px !important; font-weight: 900 !important; border-radius: 14px !important;
+  background: rgba(255,255,255,.12) !important; color: #fff !important;
+  border: 2px solid rgba(255,255,255,.28) !important;
+}
+.jam-giant-proj-btn:hover { border-color: #f59e0b !important; background: rgba(245,158,11,.2) !important; }
+.jam-giant-end-btn {
+  padding: 18px 18px !important; font-size: 15px !important; font-weight: 900 !important;
+  border-radius: 14px !important;
+}
+
 .jam-btn-light {
   background: rgba(255,255,255,.1) !important; color: #fff !important;
   border-color: rgba(255,255,255,.24) !important; font-weight: 800 !important; font-size: 12.5px !important;
 }
-.jam-btn-light:hover { border-color: #f59e0b !important; }
-.jam-class-bar {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.16);
-}
-.jam-toggle-label {
-  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 800;
-  color: #fde68a; cursor: pointer; padding: 6px 10px; border-radius: 9px;
-  background: rgba(255,255,255,.08); border: 1px solid rgba(253,230,138,.35);
-}
 .jam-codes-projector {
-  margin-top: 14px; padding: 14px; border-radius: 14px;
-  background: rgba(9, 13, 22, .78); border: 1.5px dashed #fbbf24;
+  margin-top: 12px; padding: 14px; border-radius: 14px;
+  background: rgba(9, 13, 22, .85); border: 1.5px dashed #fbbf24;
 }
 .jam-codes-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
@@ -1379,26 +1454,36 @@ h2 { font-size: 20px; letter-spacing: -.01em; margin: 0 0 12px; }
   font-family: monospace; font-size: 15px; font-weight: 900;
   padding: 3px 8px; border-radius: 7px; background: #f59e0b; color: #090d16;
 }
-.jam-deck-grid {
-  display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 16px; margin-top: 16px;
-}
-@media (max-width: 980px) {
-  .jam-deck-grid { grid-template-columns: 1fr; }
-}
-.jam-panel { display: flex; flex-direction: column; justify-content: space-between; }
 .jam-step-deck {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 7px;
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;
+}
+@media (max-width: 720px) {
+  .jam-step-deck { grid-template-columns: repeat(4, 1fr); }
 }
 .jam-deck-step {
-  padding: 9px 10px; border-radius: 11px; font-size: 12.5px; font-weight: 800;
-  background: var(--panel2); color: var(--ink); border: 1.5px solid var(--edge);
+  padding: 12px 8px; border-radius: 12px; font-size: 14px; font-weight: 900;
+  background: rgba(255,255,255,.09); color: #fff; border: 1.5px solid rgba(255,255,255,.2);
   cursor: pointer; transition: all .14s; text-align: center;
 }
 .jam-deck-step:hover { border-color: #f59e0b; transform: translateY(-1px); }
 .jam-deck-step.on {
   background: linear-gradient(135deg, #f59e0b, #ea580c);
   color: #090d16; border-color: #fef3c7; font-weight: 900;
-  box-shadow: 0 4px 14px rgba(245, 158, 11, .35);
+  box-shadow: 0 4px 14px rgba(245, 158, 11, .4);
+}
+.jam-more-drawer {
+  margin-top: 14px; background: var(--panel); border: 1.5px solid var(--edge);
+  border-radius: 16px; overflow: hidden;
+}
+.jam-more-summary {
+  padding: 13px 18px; font-size: 13.5px; font-weight: 800; color: var(--muted);
+  cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  list-style: none; user-select: none;
+}
+.jam-more-summary::-webkit-details-marker { display: none; }
+.jam-more-summary:hover { color: var(--ink); }
+.jam-more-body {
+  padding: 14px 18px 18px; border-top: 1px solid var(--edge);
 }
 .jam-activity-strip {
   display: flex; gap: 8px; flex-wrap: wrap;

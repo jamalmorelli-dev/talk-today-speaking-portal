@@ -8944,10 +8944,11 @@ function applyIncomingJamStateToStudent(incoming, forceSyncNow) {
     const curLesObj = state.currentLesson || state.lesson || null;
     const currentLessonId = (curLesObj && (curLesObj.id || curLesObj.lessonId)) || '';
     if (currentLessonId !== lessonId || (forceSyncNow && state.activeView !== 'exerciseView')) {
-      if (!state.busy && typeof openExercise === 'function') {
+      if (typeof openExercise === 'function') {
         jamState.lastAppliedSyncKey = syncKey;
         openExercise(lessonId).then(() => {
-          applyLockedStepInsideLesson(step);
+          const latestStep = (jamState.activeClassState && jamState.activeClassState.lockedStep) || step;
+          applyLockedStepInsideLesson(latestStep);
         }).catch(() => {});
         return;
       }
@@ -9369,11 +9370,14 @@ async function handleJamDirectorStepClick(step) {
   try {
     const lessonId = jamState.selectedLessonId ||
       (jamState.activeClassState && jamState.activeClassState.lessonId) || '';
+    const pTxt = ($('jamPromptInput') && $('jamPromptInput').value.trim()) ||
+      (jamState.activeClassState && jamState.activeClassState.promptText) || '';
     await syncJamClassStateToServer({
       active: true,
       activityType: 'LESSON',
       lessonId: lessonId,
-      lockedStep: step
+      lockedStep: step,
+      promptText: pTxt
     });
     if (state.activeView === 'exerciseView' || state.activeView === 'summaryView') {
       applyLockedStepInsideLesson(step);
@@ -9737,11 +9741,14 @@ if ($('jamPushLessonBtn')) {
       return;
     }
     try {
+      const pTxt = ($('jamPromptInput') && $('jamPromptInput').value.trim()) ||
+        (jamState.activeClassState && jamState.activeClassState.promptText) || '';
       const st = await syncJamClassStateToServer({
         active: true,
         activityType: 'LESSON',
         lessonId: jamState.selectedLessonId,
-        lockedStep: 'READ'
+        lockedStep: 'READ',
+        promptText: pTxt
       });
       showToast('🚀 Pushed “' + (st.lessonTitle || st.lessonId) + '” to all student screens!');
     } catch (err) {

@@ -9182,14 +9182,34 @@ function populateJamDropdowns() {
   const tSel = $('jamTeacherSelect');
   if (tSel) {
     clearEl(tSel);
-    const allOpt = el('option', '👩‍🏫 All Teachers (School-Wide · ' + jamState.roster.length + ')');
+    const activeRoster = (jamState.roster || []).filter(s => s && s.className && s.teacher);
+    const teacherCounts = {};
+    const teacherClassCounts = {};
+    activeRoster.forEach(s => {
+      teacherCounts[s.teacher] = (teacherCounts[s.teacher] || 0) + 1;
+      if (!teacherClassCounts[s.teacher]) teacherClassCounts[s.teacher] = {};
+      teacherClassCounts[s.teacher][s.className] = true;
+    });
+    const activeTeacherKeys = Object.keys(teacherCounts).sort();
+    const labelMap = {};
+    (jamState.teachers || []).forEach(t => {
+      if (t && t.key) labelMap[t.key] = t.label || t.key;
+    });
+
+    const allOpt = el('option', '👩‍🏫 All Active Teachers (' + activeTeacherKeys.length + ' teachers · ' + activeRoster.length + ' students)');
     allOpt.value = 'ALL';
     tSel.appendChild(allOpt);
-    (jamState.teachers || []).forEach(t => {
-      const o = el('option', '👩‍🏫 ' + t.label);
-      o.value = t.key;
+
+    activeTeacherKeys.forEach(tKey => {
+      const cCount = Object.keys(teacherClassCounts[tKey] || {}).length;
+      const sCount = teacherCounts[tKey] || 0;
+      const o = el('option', '👩‍🏫 ' + (labelMap[tKey] || tKey) + ' (' + cCount + (cCount === 1 ? ' class · ' : ' classes · ') + sCount + ' students)');
+      o.value = tKey;
       tSel.appendChild(o);
     });
+    if (jamState.teacherFilter !== 'ALL' && !teacherCounts[jamState.teacherFilter]) {
+      jamState.teacherFilter = 'ALL';
+    }
     tSel.value = jamState.teacherFilter || 'ALL';
   }
   populateJamClassDropdown();
@@ -9201,16 +9221,26 @@ function populateJamClassDropdown() {
   if (!cSel) return;
   clearEl(cSel);
   const tf = jamState.teacherFilter || 'ALL';
-  const scoped = (jamState.roster || []).filter(s => tf === 'ALL' || s.teacher === tf);
+  const scoped = (jamState.roster || []).filter(s => s && s.className && (tf === 'ALL' || s.teacher === tf));
   const counts = {};
+  const classTeachers = {};
   scoped.forEach(s => {
-    if (s.className) counts[s.className] = (counts[s.className] || 0) + 1;
+    counts[s.className] = (counts[s.className] || 0) + 1;
+    if (s.teacher) {
+      if (!classTeachers[s.className]) classTeachers[s.className] = [];
+      if (classTeachers[s.className].indexOf(s.teacher) < 0) {
+        classTeachers[s.className].push(s.teacher);
+      }
+    }
   });
-  const allOpt = el('option', '📚 All Classes (' + scoped.length + ' students)');
+  const classNames = Object.keys(counts).sort();
+  const allOpt = el('option', '📚 All Active Classes (' + classNames.length + (classNames.length === 1 ? ' class · ' : ' classes · ') + scoped.length + ' students)');
   allOpt.value = 'ALL';
   cSel.appendChild(allOpt);
-  Object.keys(counts).sort().forEach(cName => {
-    const o = el('option', cName + ' (' + counts[cName] + ' students)');
+  classNames.forEach(cName => {
+    const tList = classTeachers[cName] || [];
+    const tPrefix = (tf === 'ALL' && tList.length) ? ('[' + tList.join('/') + '] ') : '';
+    const o = el('option', '📚 ' + tPrefix + cName + ' (' + counts[cName] + ' students)');
     o.value = cName;
     cSel.appendChild(o);
   });

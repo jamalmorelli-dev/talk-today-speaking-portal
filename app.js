@@ -8707,9 +8707,10 @@ function isJamLessonStepFunc() {
   return null;
 }
 
-function formatJamCountdown(timerEndsAtIso) {
-  if (!timerEndsAtIso) return '';
-  const diffSec = Math.max(0, Math.round((new Date(timerEndsAtIso).getTime() - Date.now()) / 1000));
+function formatJamCountdown(timerVal) {
+  if (!timerVal) return '';
+  const targetMs = typeof timerVal === 'number' ? timerVal : new Date(timerVal).getTime();
+  const diffSec = Math.max(0, Math.round((targetMs - Date.now()) / 1000));
   if (diffSec <= 0) return '';
   const m = Math.floor(diffSec / 60);
   const s = diffSec % 60;
@@ -8718,7 +8719,8 @@ function formatJamCountdown(timerEndsAtIso) {
 
 function updateJamCountdownBadges() {
   const st = jamState.activeClassState;
-  const label = st && st.active && st.timerEndsAt ? formatJamCountdown(st.timerEndsAt) : '';
+  const endTarget = st && st.active ? (st.timerEndMs || st.timerEndsAt || 0) : 0;
+  const label = endTarget ? formatJamCountdown(endTarget) : '';
   const dChip = $('jamBarTimerChip');
   if (dChip) {
     dChip.classList.toggle('hidden', !label);
@@ -8746,11 +8748,13 @@ async function pollJamLoginBanner() {
       banner.classList.add('hidden');
       return;
     }
-    const sess = res.sessions[0];
+    const sess = res.primary || res.sessions[0];
     banner.classList.remove('hidden');
-    const targetDesc = (sess.className && sess.className !== 'ALL')
-      ? ('Class: ' + sess.className)
-      : ((sess.teacher && sess.teacher !== 'ALL') ? ('Teacher: ' + sess.teacher) : 'All Classes');
+    const cName = sess.targetClass || sess.className || 'ALL';
+    const tName = sess.targetTeacher || sess.teacher || 'ALL';
+    const targetDesc = (cName && cName !== 'ALL')
+      ? ('Class: ' + cName)
+      : ((tName && tName !== 'ALL') ? ('Teacher: ' + tName) : 'All Classes');
     $('jamLoginBannerTitle').textContent = '⚡ Live Class with Jamal Active (' + targetDesc + ')';
     $('jamLoginBannerSub').textContent = sess.lessonTitle
       ? ('Today’s Live Activity: “' + sess.lessonTitle + '”. Enter ONLY your 4-digit Student Code below (no email needed!) or pick your name:')
@@ -8910,17 +8914,19 @@ function applyIncomingJamStateToStudent(incoming, forceSyncNow) {
 
   const sBox = $('jamStudentSpotlightBox');
   if (sBox) {
-    const sText = String(incoming.spotlightText || '').trim();
+    const spotObj = (incoming.spotlight && typeof incoming.spotlight === 'object') ? incoming.spotlight : null;
+    const sName = String(incoming.spotlightStudentName || (spotObj && spotObj.studentName) || '').trim();
+    const sText = String(incoming.spotlightText || (spotObj && spotObj.text) || '').trim();
     sBox.classList.toggle('hidden', !sText);
     if (sText) {
-      $('jamStudentSpotlightHeader').textContent = incoming.spotlightStudentName
-        ? ('⭐ CLASS SPOTLIGHT · ' + incoming.spotlightStudentName)
+      $('jamStudentSpotlightHeader').textContent = sName
+        ? ('⭐ CLASS SPOTLIGHT · ' + sName)
         : '⭐ CLASS SPOTLIGHT';
       $('jamStudentSpotlightText').textContent = sText;
-      const spotKey = (incoming.spotlightStudentName || '') + '|' + sText;
+      const spotKey = sName + '|' + sText;
       if (spotKey !== jamState.lastAppliedSpotlightKey) {
         jamState.lastAppliedSpotlightKey = spotKey;
-        showToast('⭐ ' + (incoming.spotlightStudentName || 'Class Update') + ': ' + sText.slice(0, 70));
+        showToast('⭐ ' + (sName || 'Class Update') + ': ' + sText.slice(0, 70));
       }
     }
   }
@@ -9092,17 +9098,28 @@ async function openJamWorkspace(opts) {
       }));
     } catch (e) {}
 
-    jamState.teachers = Array.isArray(initRes.teachers) ? initRes.teachers : [];
-    jamState.classes = Array.isArray(initRes.classes) ? initRes.classes : [];
-    jamState.roster = Array.isArray(initRes.roster) ? initRes.roster : [];
-    jamState.lessons = Array.isArray(initRes.lessons) ? initRes.lessons : [];
+    const radar = initRes.radar || {};
+    jamState.teachers = Array.isArray(initRes.teachers) && initRes.teachers.length
+      ? initRes.teachers
+      : (Array.isArray(radar.availableTeachers) ? radar.availableTeachers : []);
+    jamState.classes = Array.isArray(initRes.classes) && initRes.classes.length
+      ? initRes.classes
+      : (Array.isArray(radar.classes) ? radar.classes : []);
+    jamState.roster = Array.isArray(initRes.roster) && initRes.roster.length
+      ? initRes.roster
+      : (Array.isArray(radar.students) ? radar.students : []);
+    jamState.lessons = Array.isArray(initRes.catalogLessons) && initRes.catalogLessons.length
+      ? initRes.catalogLessons
+      : (Array.isArray(initRes.lessons) && initRes.lessons.length
+          ? initRes.lessons
+          : (Array.isArray(radar.availableLessons) ? radar.availableLessons : []));
     jamState.jigsaws = Array.isArray(initRes.jigsaws) ? initRes.jigsaws : [];
 
     // Restore any active JAM session state
     if (Array.isArray(initRes.activeSessions) && initRes.activeSessions.length) {
       jamState.activeClassState = initRes.activeSessions[0];
-      jamState.teacherFilter = jamState.activeClassState.teacher || 'ALL';
-      jamState.classFilter = jamState.activeClassState.className || 'ALL';
+      jamState.teacherFilter = jamState.activeClassState.targetTeacher || jamState.activeClassState.teacher || 'ALL';
+      jamState.classFilter = jamState.activeClassState.targetClass || jamState.activeClassState.className || 'ALL';
       if (jamState.activeClassState.lessonId) {
         jamState.selectedLessonId = jamState.activeClassState.lessonId;
       }
@@ -9112,6 +9129,10 @@ async function openJamWorkspace(opts) {
 
     populateJamDropdowns();
     renderJamCodesProjectorGrid();
+    if (initRes.radar) {
+      jamState.lastRadarData = initRes.radar;
+      renderJamStudentMatrix(initRes.radar);
+    }
 
     $('logoutBtn').classList.remove('hidden');
     $('subBrand').textContent = '⚡ JAM VERSION · Whole-Class Live Director';
@@ -9252,10 +9273,27 @@ async function syncJamClassStateToServer(overrides) {
     ? overrides.lessonTitle
     : ((lesObj && lesObj.title) || cur.lessonTitle || '');
 
+  const spotObj = (cur.spotlight && typeof cur.spotlight === 'object') ? cur.spotlight : {};
+  const spotName = overrides.spotlightStudentName !== undefined
+    ? overrides.spotlightStudentName
+    : (cur.spotlightStudentName || spotObj.studentName || '');
+  const spotText = overrides.spotlightText !== undefined
+    ? overrides.spotlightText
+    : (cur.spotlightText || spotObj.text || '');
+  const spotlightPayload = spotText ? { studentName: spotName, text: spotText, ts: Date.now() } : null;
+
+  const timerMinutes = overrides.timerMinutes !== undefined
+    ? overrides.timerMinutes
+    : (overrides.timerSeconds !== undefined ? (Number(overrides.timerSeconds || 0) / 60) : undefined);
+
   const payload = {
     teacherSession: jamState.teacherSession || teacherState.session,
     teacher: jamState.teacherFilter || 'ALL',
+    targetTeacher: jamState.teacherFilter || 'ALL',
+    teacherFilter: jamState.teacherFilter || 'ALL',
     className: jamState.classFilter || 'ALL',
+    targetClass: jamState.classFilter || 'ALL',
+    classFilter: jamState.classFilter || 'ALL',
     active: overrides.active !== undefined ? overrides.active : true,
     allowCodeOnlyLogin: $('jamCodeOnlyCheckbox') ? $('jamCodeOnlyCheckbox').checked : true,
     activityType: overrides.activityType || cur.activityType || 'LESSON',
@@ -9265,8 +9303,10 @@ async function syncJamClassStateToServer(overrides) {
     roleplaySceneId: overrides.roleplaySceneId !== undefined ? overrides.roleplaySceneId : (cur.roleplaySceneId || ''),
     lockedStep: overrides.lockedStep || cur.lockedStep || 'FREE',
     promptText: overrides.promptText !== undefined ? overrides.promptText : (cur.promptText || ''),
-    spotlightStudentName: overrides.spotlightStudentName !== undefined ? overrides.spotlightStudentName : (cur.spotlightStudentName || ''),
-    spotlightText: overrides.spotlightText !== undefined ? overrides.spotlightText : (cur.spotlightText || ''),
+    spotlight: spotlightPayload,
+    spotlightStudentName: spotName,
+    spotlightText: spotText,
+    timerMinutes: timerMinutes,
     timerSeconds: overrides.timerSeconds !== undefined ? overrides.timerSeconds : undefined
   };
 
@@ -9275,8 +9315,11 @@ async function syncJamClassStateToServer(overrides) {
     throw new Error((res && res.error) || 'Could not update live JAM class state.');
   }
   jamState.activeClassState = res.jamState;
+  if (res.radar) {
+    jamState.lastRadarData = res.radar;
+    renderJamStudentMatrix(res.radar);
+  }
   updateJamDirectorBarUI();
-  pollJamDirectorNow();
   return res.jamState;
 }
 
@@ -9378,13 +9421,15 @@ async function pollJamDirectorNow() {
 function renderJamStudentMatrix(data) {
   if (!data) return;
   const sum = data.summary || {};
-  const onlineStr = (sum.onlineCount || 0) + ' / ' + (sum.rosterCount || 0);
+  const totalCount = sum.enrolledCount != null ? sum.enrolledCount : (sum.rosterCount || 0);
+  const onlineStr = (sum.onlineCount || 0) + ' / ' + totalCount;
   if ($('jamTileOnline')) $('jamTileOnline').textContent = onlineStr;
   if ($('jamBarOnlineChip')) $('jamBarOnlineChip').textContent = '🟢 ' + (sum.onlineCount || 0) + ' Online';
-  if ($('jamTileInLesson')) $('jamTileInLesson').textContent = String(sum.readingCount || 0);
-  if ($('jamTileAnswering')) $('jamTileAnswering').textContent = String(sum.answeringCount || 0);
+  if ($('jamTileInLesson')) $('jamTileInLesson').textContent = String(sum.readingNowCount != null ? sum.readingNowCount : (sum.readingCount || 0));
+  if ($('jamTileAnswering')) $('jamTileAnswering').textContent = String(sum.answeringNowCount != null ? sum.answeringNowCount : (sum.answeringCount || 0));
+  const accVal = sum.classAccuracyToday != null ? sum.classAccuracyToday : sum.classAccuracy;
   if ($('jamTileAccuracy')) {
-    $('jamTileAccuracy').textContent = sum.classAccuracy != null ? (sum.classAccuracy + '%') : '--';
+    $('jamTileAccuracy').textContent = accVal != null ? (accVal + '%') : '--';
   }
 
   const tbody = $('jamMatrixBody');
@@ -9404,25 +9449,27 @@ function renderJamStudentMatrix(data) {
 
   students.slice(0, 80).forEach(s => {
     const tr = el('tr', '', 'soc-row');
+    const pState = s.presenceStatus || s.presence || 'OFFLINE';
+    const isOnline = pState === 'LIVE' || pState === 'ONLINE';
     // 1. Student & Code
     const tdName = el('td');
     const nameRow = el('div', '', 's-cell-name');
-    const dotClass = s.presence === 'ONLINE' ? 'online' : (s.presence === 'IDLE' ? 'idle' : 'offline');
+    const dotClass = isOnline ? 'online' : (pState === 'IDLE' ? 'idle' : 'offline');
     nameRow.appendChild(el('span', '', 'p-dot ' + dotClass));
     nameRow.appendChild(el('strong', s.fullName || s.firstName || 'Student'));
     const codeBadge = el('span', '#' + s.code, 'student-code');
     codeBadge.style.marginLeft = '6px';
     nameRow.appendChild(codeBadge);
     tdName.appendChild(nameRow);
-    tdName.appendChild(el('div', (s.className || '') + ' · ' + (s.teacher || '') + ' · CEFR ' + (s.cefr || s.levelBand || 'A1'), 's-cell-sub'));
+    tdName.appendChild(el('div', (s.className || '') + ' · ' + (s.teacher || '') + ' · CEFR ' + (s.homeCefr || s.cefr || s.levelBand || 'A1'), 's-cell-sub'));
     tr.appendChild(tdName);
 
     // 2. Live Screen & Activity
     const tdLoc = el('td');
-    const stageStr = s.presence === 'OFFLINE'
+    const stageStr = pState === 'OFFLINE'
       ? '⚪ Offline (Code #' + s.code + ')'
-      : ('🟢 ' + (s.stageLabel || s.stage || 'Online') + (s.lessonTitle ? (' · ' + s.lessonTitle) : ''));
-    tdLoc.appendChild(el('div', stageStr, 'stage-badge ' + (s.presence === 'ONLINE' ? 'active' : '')));
+      : ((s.whereIcon || '🟢') + ' ' + (s.whereTitle || s.stageLabel || s.stage || 'Online'));
+    tdLoc.appendChild(el('div', stageStr, 'stage-badge ' + (isOnline ? 'active' : '')));
     tr.appendChild(tdLoc);
 
     // 3..6. Q1..Q4 / T1..T4 cells
@@ -9438,9 +9485,9 @@ function renderJamStudentMatrix(data) {
       } else if (c.state === 'WRONG' || c.state === 'RETRY') {
         cls += 'wrong';
         txt = c.letter || (c.score != null ? (c.score + '%') : '✗');
-      } else if (c.state === 'ACTIVE') {
+      } else if (c.state === 'ACTIVE' || c.state === 'WORKING') {
         cls += 'active';
-        txt = '✍️';
+        txt = c.letter || '✍️';
       } else {
         cls += 'empty';
       }
@@ -9450,8 +9497,9 @@ function renderJamStudentMatrix(data) {
 
     // 7. Pace / KP
     const tdPace = el('td');
-    const wpmVal = s.lastWpm || s.avgWpm || 0;
-    tdPace.appendChild(el('div', (wpmVal ? (wpmVal + ' WPM · ') : '') + '✨ ' + (s.points || 0) + ' KP'));
+    const wpmVal = s.wpm || s.lastWpm || s.avgWpm || 0;
+    const kpVal = s.knowledgePoints != null ? s.knowledgePoints : (s.points || 0);
+    tdPace.appendChild(el('div', (wpmVal ? (wpmVal + ' WPM · ') : '') + '✨ ' + kpVal + ' KP'));
     tr.appendChild(tdPace);
 
     // 8. JAM Director 1-Click Actions (Spotlight + +10 KP)
@@ -9508,7 +9556,10 @@ async function spinJamColdCallWheel() {
   const radarStudents = (jamState.lastRadarData && Array.isArray(jamState.lastRadarData.students))
     ? jamState.lastRadarData.students
     : [];
-  const onlinePool = radarStudents.filter(s => s.presence === 'ONLINE' || s.presence === 'IDLE');
+  const onlinePool = radarStudents.filter(s => {
+    const p = s.presenceStatus || s.presence || 'OFFLINE';
+    return p === 'LIVE' || p === 'ONLINE' || p === 'IDLE';
+  });
   const pool = onlinePool.length ? onlinePool : getScopedJamRoster();
   if (!pool.length) {
     showToast('No students in current class filter.');
@@ -9525,15 +9576,30 @@ async function spinJamColdCallWheel() {
 
 async function awardJamWholeClassBonusKp() {
   try {
+    const radarStudents = (jamState.lastRadarData && Array.isArray(jamState.lastRadarData.students))
+      ? jamState.lastRadarData.students
+      : [];
+    const onlineCodes = radarStudents
+      .filter(s => {
+        const p = s.presenceStatus || s.presence || 'OFFLINE';
+        return p === 'LIVE' || p === 'ONLINE' || p === 'IDLE';
+      })
+      .map(s => s.code)
+      .filter(Boolean);
+    const fallbackCodes = getScopedJamRoster().slice(0, 40).map(s => s.code).filter(Boolean);
+    const targetCodes = onlineCodes.length ? onlineCodes : fallbackCodes;
+    if (!targetCodes.length) {
+      showToast('No students in current class filter.');
+      return;
+    }
     const res = await rpc('jamAwardBonusKp', {
       teacherSession: jamState.teacherSession || teacherState.session,
-      teacher: jamState.teacherFilter || 'ALL',
-      className: jamState.classFilter || 'ALL',
+      studentCodes: targetCodes,
       points: 10,
       reason: 'Whole-Class Energy Bonus from Jamal!'
     });
     if (res && res.ok) {
-      showToast('🎉 Awarded +10 Bonus KP to ' + (res.awardedCount || 0) + ' students!');
+      showToast('🎉 Awarded +10 Bonus KP to ' + (res.awardedCount || targetCodes.length) + ' students!');
       pollJamDirectorNow();
     }
   } catch (err) {

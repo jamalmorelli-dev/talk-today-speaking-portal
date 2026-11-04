@@ -1052,6 +1052,10 @@ function sendStudentBeacon(patch) {
     qId: clientPresence.qId,
     qPrompt: clientPresence.qPrompt,
     skill: clientPresence.skill
+  }).then(res => {
+    if (res && res.jamState && typeof applyIncomingJamStateToStudent === 'function') {
+      applyIncomingJamStateToStudent(res.jamState, false);
+    }
   }).catch(() => {});
 }
 
@@ -1068,11 +1072,12 @@ function showView(viewId) {
     stopAllRecordersAndAudio();
   }
   state.activeView = viewId;
-  ['loginView', 'loadingView', 'dashboardView', 'exerciseView', 'placementView', 'summaryView', 'teacherView', 'jigsawStudioView', 'jigsawView', 'roleplayHubView', 'roleplayStageView', 'roleplayDebriefView', 'examinerView'].forEach(id => {
+  ['loginView', 'loadingView', 'dashboardView', 'exerciseView', 'placementView', 'summaryView', 'teacherView', 'jigsawStudioView', 'jigsawView', 'roleplayHubView', 'roleplayStageView', 'roleplayDebriefView', 'examinerView', 'jamView'].forEach(id => {
     const node = $(id);
     if (node) node.classList.toggle('hidden', id !== viewId);
   });
   try { if (typeof updateExaminerBarUI === 'function') updateExaminerBarUI(); } catch (e) {}
+  try { if (typeof updateJamDirectorBarUI === 'function') updateJamDirectorBarUI(); } catch (e) {}
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -1195,6 +1200,10 @@ function completeStudentLogin(res, rawCode, rawEmail) {
   $('portalForm').classList.remove('hidden');
   renderDashboard(res.appData);
   showView('dashboardView');
+  if (typeof startJamStudentAutopilotPolling === 'function') startJamStudentAutopilotPolling();
+  if (res.appData && res.appData.jamState && typeof applyIncomingJamStateToStudent === 'function') {
+    applyIncomingJamStateToStudent(res.appData.jamState, true);
+  }
 }
 
 if ($('staffPreviewBtn')) {
@@ -1418,6 +1427,14 @@ $('logoutBtn').addEventListener('click', () => {
       examinerState.selectedStudent = null;
       if (typeof updateExaminerBarUI === 'function') updateExaminerBarUI();
     }
+    if (typeof jamState !== 'undefined') {
+      jamState.directorMode = false;
+      jamState.projectorPreviewActive = false;
+      if (typeof stopJamDirectorPolling === 'function') stopJamDirectorPolling();
+      if (typeof stopJamStudentAutopilotPolling === 'function') stopJamStudentAutopilotPolling();
+      if (typeof updateJamDirectorBarUI === 'function') updateJamDirectorBarUI();
+      if ($('jamStudentBanner')) $('jamStudentBanner').classList.add('hidden');
+    }
   } catch (eEx) {}
   try {
     sessionStorage.removeItem('ttsl_portal_auth');
@@ -1426,6 +1443,7 @@ $('logoutBtn').addEventListener('click', () => {
   ['ptsChip', 'streakChip', 'lvlChip', 'logoutBtn'].forEach(id => $(id).classList.add('hidden'));
   $('subBrand').textContent = 'Student Portal & AI Speaking Coach';
   showView('loginView');
+  if (typeof startJamLoginPolling === 'function') startJamLoginPolling();
 });
 
 /* =========================================================================
@@ -1574,6 +1592,9 @@ function renderDashboard(data) {
   sendStudentBeacon({
     stage: 'LOBBY', lessonId: '', lessonTitle: '', lessonCefr: '', qIndex: 0, qId: '', qPrompt: '', skill: ''
   });
+  if (data.jamState && typeof applyIncomingJamStateToStudent === 'function') {
+    applyIncomingJamStateToStudent(data.jamState, false);
+  }
 }
 
 $('togglePlacementHistBtn').addEventListener('click', () => {
@@ -8630,6 +8651,1163 @@ $('exSaveFinalBandBtn').addEventListener('click', async () => {
 });
 
 
+/* =========================================================================
+   JAM VERSION — LIVE WHOLE-CLASS DIRECTOR & AUTOPILOT ENGINE (v1.0)
+   ========================================================================= */
+const jam = {
+  toastTimer: null
+};
+if (typeof window.showToast !== 'function') {
+  window.showToast = function(msg) {
+    let t = document.getElementById('toast');
+    if (!t) {
+      t = el('div', '', 'toast hidden');
+      t.id = 'toast';
+      document.body.appendChild(t);
+    }
+    t.textContent = String(msg || '');
+    t.classList.remove('hidden');
+    if (jam.toastTimer) clearTimeout(jam.toastTimer);
+    jam.toastTimer = setTimeout(() => {
+      t.classList.add('hidden');
+    }, 3400);
+  };
+}
+
+const jamState = {
+  directorMode: false,
+  teacherSession: '',
+  teachers: [],
+  classes: [],
+  roster: [],
+  lessons: [],
+  jigsaws: [],
+  teacherFilter: 'ALL',
+  classFilter: 'ALL',
+  cefrFilter: 'ALL',
+  lessonSearch: '',
+  selectedLessonId: '',
+  allowCodeOnlyLogin: true,
+  activeClassState: null,
+  lastRadarData: null,
+  pollTimer: null,
+  pollBusy: false,
+  loginPollTimer: null,
+  studentPollTimer: null,
+  countdownInterval: null,
+  lastAppliedSyncKey: '',
+  lastAppliedStepKey: '',
+  lastAppliedSpotlightKey: '',
+  projectorPreviewActive: false
+};
+
+function isJamLessonStepFunc() {
+  if (typeof renderQuestion === 'function') return renderQuestion;
+  if (typeof renderSpeakingTask === 'function') return renderSpeakingTask;
+  return null;
+}
+
+function formatJamCountdown(timerEndsAtIso) {
+  if (!timerEndsAtIso) return '';
+  const diffSec = Math.max(0, Math.round((new Date(timerEndsAtIso).getTime() - Date.now()) / 1000));
+  if (diffSec <= 0) return '';
+  const m = Math.floor(diffSec / 60);
+  const s = diffSec % 60;
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+function updateJamCountdownBadges() {
+  const st = jamState.activeClassState;
+  const label = st && st.active && st.timerEndsAt ? formatJamCountdown(st.timerEndsAt) : '';
+  const dChip = $('jamBarTimerChip');
+  if (dChip) {
+    dChip.classList.toggle('hidden', !label);
+    if (label) dChip.textContent = '⏱ ' + label;
+  }
+  const sChip = $('jamStudentTimerBadge');
+  if (sChip) {
+    sChip.classList.toggle('hidden', !label);
+    if (label) sChip.textContent = '⏱ ' + label;
+  }
+}
+
+if (!jamState.countdownInterval) {
+  jamState.countdownInterval = setInterval(updateJamCountdownBadges, 1000);
+}
+
+/* ---------- 1. Student Login Screen Live JAM Detection & 1-Tap Join ---------- */
+async function pollJamLoginBanner() {
+  if (state.activeView !== 'loginView' || jamState.directorMode) return;
+  try {
+    const res = await rpc('jamPublicStatus', {});
+    const banner = $('jamLoginBanner');
+    if (!banner) return;
+    if (!res || !res.ok || !res.active || !Array.isArray(res.sessions) || !res.sessions.length) {
+      banner.classList.add('hidden');
+      return;
+    }
+    const sess = res.sessions[0];
+    banner.classList.remove('hidden');
+    const targetDesc = (sess.className && sess.className !== 'ALL')
+      ? ('Class: ' + sess.className)
+      : ((sess.teacher && sess.teacher !== 'ALL') ? ('Teacher: ' + sess.teacher) : 'All Classes');
+    $('jamLoginBannerTitle').textContent = '⚡ Live Class with Jamal Active (' + targetDesc + ')';
+    $('jamLoginBannerSub').textContent = sess.lessonTitle
+      ? ('Today’s Live Activity: “' + sess.lessonTitle + '”. Enter ONLY your 4-digit Student Code below (no email needed!) or pick your name:')
+      : 'Enter ONLY your 4-digit Student Code below (no email needed!) or pick your name from the class roster:';
+
+    const rWrap = $('jamLoginRosterWrap');
+    const rSel = $('jamLoginRosterSelect');
+    if (rWrap && rSel && Array.isArray(res.roster) && res.roster.length) {
+      rWrap.classList.remove('hidden');
+      const prev = rSel.value;
+      clearEl(rSel);
+      const ph = el('option', '🎒 Pick your name from today’s class roster (' + res.roster.length + ' students)…');
+      ph.value = '';
+      rSel.appendChild(ph);
+      res.roster.forEach(st => {
+        const o = el('option', st.fullName + ' (#' + st.code + ')' + (st.className ? (' · ' + st.className) : ''));
+        o.value = st.code;
+        rSel.appendChild(o);
+      });
+      if (prev) rSel.value = prev;
+    } else if (rWrap) {
+      rWrap.classList.add('hidden');
+    }
+
+    // Also make parentEmail placeholder clearly optional while JAM Live is active
+    const emailIn = $('parentEmail');
+    if (emailIn && sess.allowCodeOnlyLogin) {
+      emailIn.placeholder = 'Guardian email (OPTIONAL during Live JAM Class!)';
+    }
+  } catch (e) {}
+}
+
+function startJamLoginPolling() {
+  stopJamLoginPolling();
+  pollJamLoginBanner();
+  jamState.loginPollTimer = setInterval(pollJamLoginBanner, 6000);
+}
+
+function stopJamLoginPolling() {
+  if (jamState.loginPollTimer) {
+    clearInterval(jamState.loginPollTimer);
+    jamState.loginPollTimer = null;
+  }
+}
+
+async function joinLiveJamClassByCode(studentCode) {
+  const cleanCode = String(studentCode || '').replace(/\D/g, '').trim();
+  if (!cleanCode) {
+    if ($('loginErr')) $('loginErr').textContent = 'Pick your name or type your 4-digit Student Code first.';
+    return;
+  }
+  if (state.busy) return;
+  state.busy = true;
+  if ($('loginErr')) $('loginErr').textContent = '';
+  try {
+    showView('loadingView');
+    $('loadingText').textContent = '⚡ Joining Live Class with Jamal…';
+    const res = await rpc('portalOpen', {
+      code: cleanCode,
+      email: ($('parentEmail') && $('parentEmail').value.trim()) || '',
+      jamQuickLogin: true
+    });
+    if (!res || !res.ok) {
+      throw new Error((res && res.error) || 'Could not join live class.');
+    }
+    state.portalContext = {
+      code: res.student.code,
+      email: res.email || 'jam-live@talktodayusa.org',
+      session: res.session,
+      actor: res.actor || 'student',
+      student: res.student,
+      siblings: res.siblings || []
+    };
+    state.code = {
+      code: res.student.code,
+      email: res.email || 'jam-live@talktodayusa.org',
+      session: res.session
+    };
+    try {
+      sessionStorage.setItem('ttsl_portal_auth', JSON.stringify(state.portalContext));
+      sessionStorage.setItem('ttrl_portal_auth', JSON.stringify(state.portalContext));
+    } catch (e) {}
+
+    $('logoutBtn').classList.remove('hidden');
+    renderDashboard(res.appData);
+    showView('dashboardView');
+    startJamStudentAutopilotPolling();
+    if (res.appData && res.appData.jamState) {
+      applyIncomingJamStateToStudent(res.appData.jamState, true);
+    }
+  } catch (err) {
+    showView('loginView');
+    if ($('loginErr')) $('loginErr').textContent = err.message || 'Could not join live class.';
+  } finally {
+    state.busy = false;
+  }
+}
+
+/* ---------- 2. Student In-App Live JAM Autopilot & Lockstep Sync ---------- */
+function startJamStudentAutopilotPolling() {
+  stopJamStudentAutopilotPolling();
+  if (jamState.directorMode) return;
+  jamState.studentPollTimer = setInterval(async () => {
+    if (jamState.directorMode || !state.portalContext || !state.portalContext.code || state.activeView === 'loginView') return;
+    try {
+      const res = await rpc('jamStudentPoll', {
+        auth: state.code,
+        code: state.portalContext.code
+      });
+      if (res && res.ok) {
+        applyIncomingJamStateToStudent(res.jamState || { active: false }, false);
+      }
+    } catch (e) {}
+  }, 4000);
+}
+
+function stopJamStudentAutopilotPolling() {
+  if (jamState.studentPollTimer) {
+    clearInterval(jamState.studentPollTimer);
+    jamState.studentPollTimer = null;
+  }
+}
+
+function describeLockedStepLabel(step) {
+  const s = String(step || 'FREE').toUpperCase();
+  if (s === 'READ') return '📖 Read & Listen Together';
+  if (s === 'Q1') return '1️⃣ Question / Task 1';
+  if (s === 'Q2') return '2️⃣ Question / Task 2';
+  if (s === 'Q3') return '3️⃣ Question / Task 3';
+  if (s === 'Q4') return '4️⃣ Question / Task 4';
+  if (s === 'SUMMARY') return '🏆 Mission Summary';
+  return '🔓 Free Pace';
+}
+
+function applyIncomingJamStateToStudent(incoming, forceSyncNow) {
+  if (jamState.directorMode && !jamState.projectorPreviewActive) return;
+  jamState.activeClassState = incoming || null;
+  const banner = $('jamStudentBanner');
+  if (!banner) return;
+
+  if (!incoming || !incoming.active) {
+    banner.classList.add('hidden');
+    return;
+  }
+
+  banner.classList.remove('hidden');
+  $('jamStudentStepBadge').textContent = describeLockedStepLabel(incoming.lockedStep);
+  $('jamStudentLessonTitle').textContent = incoming.lessonTitle ? ('· “' + incoming.lessonTitle + '”') : '';
+  updateJamCountdownBadges();
+
+  const pBox = $('jamStudentPromptBox');
+  if (pBox) {
+    const pText = String(incoming.promptText || '').trim();
+    pBox.classList.toggle('hidden', !pText);
+    if (pText) pBox.textContent = '📢 Jamal: ' + pText;
+  }
+
+  const sBox = $('jamStudentSpotlightBox');
+  if (sBox) {
+    const sText = String(incoming.spotlightText || '').trim();
+    sBox.classList.toggle('hidden', !sText);
+    if (sText) {
+      $('jamStudentSpotlightHeader').textContent = incoming.spotlightStudentName
+        ? ('⭐ CLASS SPOTLIGHT · ' + incoming.spotlightStudentName)
+        : '⭐ CLASS SPOTLIGHT';
+      $('jamStudentSpotlightText').textContent = sText;
+      const spotKey = (incoming.spotlightStudentName || '') + '|' + sText;
+      if (spotKey !== jamState.lastAppliedSpotlightKey) {
+        jamState.lastAppliedSpotlightKey = spotKey;
+        showToast('⭐ ' + (incoming.spotlightStudentName || 'Class Update') + ': ' + sText.slice(0, 70));
+      }
+    }
+  }
+
+  // Automatic Lockstep Activity & Step Navigation for Students
+  if (jamState.directorMode) return; // Director controls their own screen via the bar
+
+  const actType = String(incoming.activityType || 'LESSON').toUpperCase();
+  const lessonId = String(incoming.lessonId || '').trim();
+  const step = String(incoming.lockedStep || 'FREE').toUpperCase();
+  const syncKey = actType + '|' + lessonId + '|' + (incoming.jigsawId || '') + '|' + (incoming.roleplaySceneId || '');
+  const stepKey = syncKey + '|' + step + '|' + (incoming.updatedAt || '');
+
+  if (actType === 'LESSON' && lessonId) {
+    const curLesObj = state.currentLesson || state.lesson || null;
+    const currentLessonId = (curLesObj && (curLesObj.id || curLesObj.lessonId)) || '';
+    if (currentLessonId !== lessonId || (forceSyncNow && state.activeView !== 'exerciseView')) {
+      if (!state.busy && typeof openExercise === 'function') {
+        jamState.lastAppliedSyncKey = syncKey;
+        openExercise(lessonId).then(() => {
+          applyLockedStepInsideLesson(step);
+        }).catch(() => {});
+        return;
+      }
+    } else if (forceSyncNow || stepKey !== jamState.lastAppliedStepKey) {
+      jamState.lastAppliedStepKey = stepKey;
+      applyLockedStepInsideLesson(step);
+    }
+  } else if (actType === 'JIGSAW' && incoming.jigsawId) {
+    if (forceSyncNow || jamState.lastAppliedSyncKey !== syncKey) {
+      jamState.lastAppliedSyncKey = syncKey;
+      if (typeof openStudentJigsaw === 'function') {
+        openStudentJigsaw(incoming.jigsawId);
+      }
+    }
+  } else if (actType === 'PLACEMENT') {
+    if (forceSyncNow || jamState.lastAppliedSyncKey !== syncKey) {
+      jamState.lastAppliedSyncKey = syncKey;
+      if ($('openPlacementBtn')) $('openPlacementBtn').click();
+    }
+  } else if (actType === 'ROLEPLAY') {
+    if (forceSyncNow || jamState.lastAppliedSyncKey !== syncKey) {
+      jamState.lastAppliedSyncKey = syncKey;
+      if ($('openRoleplayBtn')) $('openRoleplayBtn').click();
+    }
+  }
+}
+
+function applyLockedStepInsideLesson(step) {
+  if (!state.currentLesson && !state.lesson) return;
+  const s = String(step || 'FREE').toUpperCase();
+  const stepFn = isJamLessonStepFunc();
+  if (s === 'READ') {
+    if (state.activeView !== 'exerciseView') showView('exerciseView');
+    const pBox = $('passageBox') || $('passage');
+    if (pBox && typeof pBox.scrollIntoView === 'function') {
+      pBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  } else if (s === 'Q1' || s === 'Q2' || s === 'Q3' || s === 'Q4') {
+    const idx = parseInt(s.slice(1), 10) - 1;
+    if (state.activeView !== 'exerciseView') showView('exerciseView');
+    if (stepFn && idx >= 0 && idx < 4) {
+      stepFn(idx);
+    }
+  } else if (s === 'SUMMARY') {
+    if (typeof finishLesson === 'function') {
+      finishLesson();
+    }
+  }
+}
+
+/* ---------- 3. JAM Whole-Class Director Command Center ---------- */
+function updateJamDirectorBarUI() {
+  const bar = $('jamDirectorBar');
+  if (!bar) return;
+  bar.classList.toggle('hidden', !jamState.directorMode);
+  if (!jamState.directorMode) return;
+
+  const st = jamState.activeClassState;
+  const isLive = !!(st && st.active);
+  $('jamBarLiveBadge').textContent = isLive ? '🟢 JAM LIVE' : '⚡ JAM DIRECTOR';
+  const targetLabel = (jamState.classFilter && jamState.classFilter !== 'ALL')
+    ? jamState.classFilter
+    : ((jamState.teacherFilter && jamState.teacherFilter !== 'ALL') ? ('Teacher ' + jamState.teacherFilter) : 'All Classes (School-Wide)');
+  $('jamBarTargetLabel').textContent = targetLabel + (st && st.lessonTitle ? (' · ' + st.lessonTitle) : '');
+
+  const curStep = (st && st.lockedStep) || 'FREE';
+  const map = {
+    FREE: 'jamBarStepFreeBtn',
+    READ: 'jamBarStepReadBtn',
+    Q1: 'jamBarStepQ1Btn',
+    Q2: 'jamBarStepQ2Btn',
+    Q3: 'jamBarStepQ3Btn',
+    Q4: 'jamBarStepQ4Btn',
+    SUMMARY: 'jamBarStepSumBtn'
+  };
+  Object.keys(map).forEach(k => {
+    const btn = $(map[k]);
+    if (btn) btn.classList.toggle('on', curStep === k);
+  });
+
+  // Also sync deck buttons inside #jamView
+  const deckMap = {
+    FREE: 'jamDeckStepFreeBtn',
+    READ: 'jamDeckStepReadBtn',
+    Q1: 'jamDeckStepQ1Btn',
+    Q2: 'jamDeckStepQ2Btn',
+    Q3: 'jamDeckStepQ3Btn',
+    Q4: 'jamDeckStepQ4Btn',
+    SUMMARY: 'jamDeckStepSumBtn'
+  };
+  Object.keys(deckMap).forEach(k => {
+    const btn = $(deckMap[k]);
+    if (btn) btn.classList.toggle('on', curStep === k);
+  });
+
+  if ($('jamSessionStatusChip')) {
+    $('jamSessionStatusChip').textContent = isLive ? '🟢 LIVE AUTOPILOT ON' : '⚪ STANDBY';
+  }
+  if ($('jamStartSessionBtn')) {
+    $('jamStartSessionBtn').textContent = isLive ? '🔄 Update Live JAM Class' : '🟢 START LIVE JAM CLASS';
+  }
+  if ($('jamEndSessionBtn')) {
+    $('jamEndSessionBtn').classList.toggle('hidden', !isLive);
+  }
+  if ($('jamPushedLessonChip')) {
+    $('jamPushedLessonChip').textContent = (st && st.lessonTitle)
+      ? ('Pushed: ' + st.lessonTitle + ' (' + curStep + ')')
+      : 'No lesson pushed yet';
+  }
+  updateJamCountdownBadges();
+}
+
+async function openJamWorkspace(opts) {
+  opts = opts || {};
+  if (state.busy) return;
+  state.busy = true;
+  if ($('loginErr')) $('loginErr').textContent = '';
+  if ($('jamErrBox')) $('jamErrBox').textContent = '';
+
+  try {
+    stopJamLoginPolling();
+    stopJamStudentAutopilotPolling();
+
+    showView('loadingView');
+    $('loadingText').textContent = '⚡ Opening JAM VERSION — Whole-Class Live Director…';
+
+    const initRes = await rpc('jamInit', {
+      teacherSession: jamState.teacherSession || teacherState.session || '',
+      teacher: opts.teacher || jamState.teacherFilter || teacherState.teacher || 'DIRECTOR',
+      email: 'jamalmorelli'
+    });
+    if (!initRes || !initRes.ok) {
+      throw new Error((initRes && initRes.error) || 'Could not initialize JAM Director Mode.');
+    }
+
+    jamState.directorMode = true;
+    jamState.teacherSession = initRes.teacherSession || jamState.teacherSession;
+    teacherState.session = jamState.teacherSession;
+    teacherState.role = initRes.role || 'DIRECTOR';
+    teacherState.teacher = initRes.teacher || 'DIRECTOR';
+    teacherState.displayName = initRes.displayName || 'Jamal (Live Class Director)';
+    try {
+      sessionStorage.setItem('ttsl_teacher_auth', JSON.stringify({
+        session: teacherState.session,
+        role: teacherState.role,
+        teacher: teacherState.teacher,
+        displayName: teacherState.displayName
+      }));
+    } catch (e) {}
+
+    jamState.teachers = Array.isArray(initRes.teachers) ? initRes.teachers : [];
+    jamState.classes = Array.isArray(initRes.classes) ? initRes.classes : [];
+    jamState.roster = Array.isArray(initRes.roster) ? initRes.roster : [];
+    jamState.lessons = Array.isArray(initRes.lessons) ? initRes.lessons : [];
+    jamState.jigsaws = Array.isArray(initRes.jigsaws) ? initRes.jigsaws : [];
+
+    // Restore any active JAM session state
+    if (Array.isArray(initRes.activeSessions) && initRes.activeSessions.length) {
+      jamState.activeClassState = initRes.activeSessions[0];
+      jamState.teacherFilter = jamState.activeClassState.teacher || 'ALL';
+      jamState.classFilter = jamState.activeClassState.className || 'ALL';
+      if (jamState.activeClassState.lessonId) {
+        jamState.selectedLessonId = jamState.activeClassState.lessonId;
+      }
+    } else if (jamState.lessons.length && !jamState.selectedLessonId) {
+      jamState.selectedLessonId = jamState.lessons[0].id;
+    }
+
+    populateJamDropdowns();
+    renderJamCodesProjectorGrid();
+
+    $('logoutBtn').classList.remove('hidden');
+    $('subBrand').textContent = '⚡ JAM VERSION · Whole-Class Live Director';
+    showView('jamView');
+    updateJamDirectorBarUI();
+    startJamDirectorPolling();
+  } catch (err) {
+    showView('loginView');
+    if ($('loginErr')) $('loginErr').textContent = err.message || 'Could not open JAM Mode.';
+    showToast(err.message || 'Could not open JAM Mode.');
+  } finally {
+    state.busy = false;
+  }
+}
+
+function getScopedJamRoster() {
+  const tf = jamState.teacherFilter || 'ALL';
+  const cf = jamState.classFilter || 'ALL';
+  return (jamState.roster || []).filter(st => {
+    if (tf !== 'ALL' && st.teacher !== tf) return false;
+    if (cf !== 'ALL' && st.className !== cf) return false;
+    return true;
+  });
+}
+
+function populateJamDropdowns() {
+  const tSel = $('jamTeacherSelect');
+  if (tSel) {
+    clearEl(tSel);
+    const allOpt = el('option', '👩‍🏫 All Teachers (School-Wide · ' + jamState.roster.length + ')');
+    allOpt.value = 'ALL';
+    tSel.appendChild(allOpt);
+    (jamState.teachers || []).forEach(t => {
+      const o = el('option', '👩‍🏫 ' + t.label);
+      o.value = t.key;
+      tSel.appendChild(o);
+    });
+    tSel.value = jamState.teacherFilter || 'ALL';
+  }
+  populateJamClassDropdown();
+  populateJamLessonDropdown();
+}
+
+function populateJamClassDropdown() {
+  const cSel = $('jamClassSelect');
+  if (!cSel) return;
+  clearEl(cSel);
+  const tf = jamState.teacherFilter || 'ALL';
+  const scoped = (jamState.roster || []).filter(s => tf === 'ALL' || s.teacher === tf);
+  const counts = {};
+  scoped.forEach(s => {
+    if (s.className) counts[s.className] = (counts[s.className] || 0) + 1;
+  });
+  const allOpt = el('option', '📚 All Classes (' + scoped.length + ' students)');
+  allOpt.value = 'ALL';
+  cSel.appendChild(allOpt);
+  Object.keys(counts).sort().forEach(cName => {
+    const o = el('option', cName + ' (' + counts[cName] + ' students)');
+    o.value = cName;
+    cSel.appendChild(o);
+  });
+  if (jamState.classFilter !== 'ALL' && !counts[jamState.classFilter]) {
+    jamState.classFilter = 'ALL';
+  }
+  cSel.value = jamState.classFilter || 'ALL';
+}
+
+function populateJamLessonDropdown() {
+  const lSel = $('jamLessonSelect');
+  if (!lSel) return;
+  const prev = jamState.selectedLessonId || lSel.value;
+  clearEl(lSel);
+  const cf = jamState.cefrFilter || 'ALL';
+  const q = String(jamState.lessonSearch || '').trim().toLowerCase();
+
+  const filtered = (jamState.lessons || []).filter(les => {
+    if (cf === 'BOOK') {
+      if (!/^BOOK-/i.test(les.id)) return false;
+    } else if (cf !== 'ALL') {
+      if (!String(les.cefr || '').toUpperCase().startsWith(cf)) return false;
+    }
+    if (q) {
+      const hay = (les.id + ' ' + les.title + ' ' + les.cefr + ' ' + les.topic + ' ' + les.genre).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  if (!filtered.length) {
+    const empty = el('option', 'No lessons match filter');
+    empty.value = '';
+    lSel.appendChild(empty);
+    return;
+  }
+
+  filtered.forEach(les => {
+    const prefix = /^BOOK-/i.test(les.id) ? '📚 ' : '📖 ';
+    const o = el('option', prefix + '[' + (les.cefr || 'A1') + '] ' + les.title + ' (' + les.id + ')');
+    o.value = les.id;
+    lSel.appendChild(o);
+  });
+
+  if (prev && filtered.some(l => l.id === prev)) {
+    lSel.value = prev;
+  } else {
+    jamState.selectedLessonId = filtered[0].id;
+    lSel.value = filtered[0].id;
+  }
+}
+
+function renderJamCodesProjectorGrid() {
+  const grid = $('jamCodesGrid');
+  if (!grid) return;
+  clearEl(grid);
+  const list = getScopedJamRoster();
+  if (!list.length) {
+    grid.appendChild(el('div', 'No students enrolled in this filter.', 'muted'));
+    return;
+  }
+  list.slice(0, 100).forEach(st => {
+    const card = el('div', '', 'jam-code-card');
+    const nameSpan = el('span', st.fullName);
+    const codeSpan = el('span', '#' + st.code, 'jam-code-num');
+    card.appendChild(nameSpan);
+    card.appendChild(codeSpan);
+    grid.appendChild(card);
+  });
+}
+
+async function syncJamClassStateToServer(overrides) {
+  overrides = overrides || {};
+  const cur = jamState.activeClassState || {};
+  const lessonId = overrides.lessonId !== undefined
+    ? overrides.lessonId
+    : (jamState.selectedLessonId || cur.lessonId || '');
+  const lesObj = (jamState.lessons || []).find(l => l.id === lessonId);
+  const lessonTitle = overrides.lessonTitle !== undefined
+    ? overrides.lessonTitle
+    : ((lesObj && lesObj.title) || cur.lessonTitle || '');
+
+  const payload = {
+    teacherSession: jamState.teacherSession || teacherState.session,
+    teacher: jamState.teacherFilter || 'ALL',
+    className: jamState.classFilter || 'ALL',
+    active: overrides.active !== undefined ? overrides.active : true,
+    allowCodeOnlyLogin: $('jamCodeOnlyCheckbox') ? $('jamCodeOnlyCheckbox').checked : true,
+    activityType: overrides.activityType || cur.activityType || 'LESSON',
+    lessonId: lessonId,
+    lessonTitle: lessonTitle,
+    jigsawId: overrides.jigsawId !== undefined ? overrides.jigsawId : (cur.jigsawId || ''),
+    roleplaySceneId: overrides.roleplaySceneId !== undefined ? overrides.roleplaySceneId : (cur.roleplaySceneId || ''),
+    lockedStep: overrides.lockedStep || cur.lockedStep || 'FREE',
+    promptText: overrides.promptText !== undefined ? overrides.promptText : (cur.promptText || ''),
+    spotlightStudentName: overrides.spotlightStudentName !== undefined ? overrides.spotlightStudentName : (cur.spotlightStudentName || ''),
+    spotlightText: overrides.spotlightText !== undefined ? overrides.spotlightText : (cur.spotlightText || ''),
+    timerSeconds: overrides.timerSeconds !== undefined ? overrides.timerSeconds : undefined
+  };
+
+  const res = await rpc('jamSetClassState', payload);
+  if (!res || !res.ok) {
+    throw new Error((res && res.error) || 'Could not update live JAM class state.');
+  }
+  jamState.activeClassState = res.jamState;
+  updateJamDirectorBarUI();
+  pollJamDirectorNow();
+  return res.jamState;
+}
+
+async function openProjectorLessonInJamMode() {
+  const lessonId = jamState.selectedLessonId ||
+    (jamState.activeClassState && jamState.activeClassState.lessonId) ||
+    (jamState.lessons[0] && jamState.lessons[0].id) || '';
+  if (!lessonId) {
+    showToast('Select a lesson first.');
+    return;
+  }
+
+  // Ensure staff preview session is initialized so openExercise works smoothly on the projector
+  if (!state.portalContext || !state.code) {
+    let pRes = await rpc('portalOpen', { code: 'DIRECTOR', email: '' }).catch(() => null);
+    if (!pRes || !pRes.ok) {
+      pRes = await rpc('portalStaffPreview', {}).catch(() => null);
+    }
+    if (pRes && pRes.ok) {
+      state.portalContext = {
+        code: (pRes.student && pRes.student.code) || 'DIRECTOR',
+        email: 'director@talktodayusa.org',
+        session: pRes.session,
+        actor: 'staff',
+        student: pRes.student || { code: 'DIRECTOR', fullName: 'Director Preview' },
+        siblings: []
+      };
+      state.code = {
+        code: state.portalContext.code,
+        email: 'director@talktodayusa.org',
+        session: pRes.session
+      };
+      renderDashboard(pRes.appData);
+    }
+  }
+
+  jamState.projectorPreviewActive = true;
+  if (typeof openExercise === 'function') {
+    await openExercise(lessonId);
+    const curStep = (jamState.activeClassState && jamState.activeClassState.lockedStep) || 'READ';
+    applyLockedStepInsideLesson(curStep);
+  }
+  updateJamDirectorBarUI();
+}
+
+async function handleJamDirectorStepClick(step) {
+  try {
+    const lessonId = jamState.selectedLessonId ||
+      (jamState.activeClassState && jamState.activeClassState.lessonId) || '';
+    await syncJamClassStateToServer({
+      active: true,
+      activityType: 'LESSON',
+      lessonId: lessonId,
+      lockedStep: step
+    });
+    if (state.activeView === 'exerciseView' || state.activeView === 'summaryView') {
+      applyLockedStepInsideLesson(step);
+    }
+    showToast('⚡ All student screens synced to: ' + describeLockedStepLabel(step));
+  } catch (err) {
+    showToast(err.message || 'Could not sync step.');
+  }
+}
+
+/* ---------- 4. Live Student Matrix Polling inside JAM View ---------- */
+function startJamDirectorPolling() {
+  stopJamDirectorPolling();
+  pollJamDirectorNow();
+  jamState.pollTimer = setInterval(pollJamDirectorNow, 4000);
+}
+
+function stopJamDirectorPolling() {
+  if (jamState.pollTimer) {
+    clearInterval(jamState.pollTimer);
+    jamState.pollTimer = null;
+  }
+}
+
+async function pollJamDirectorNow() {
+  if (!jamState.directorMode || jamState.pollBusy) return;
+  jamState.pollBusy = true;
+  try {
+    const res = await rpc('teacherLivePoll', {
+      session: jamState.teacherSession || teacherState.session,
+      teacherFilter: jamState.teacherFilter || 'ALL',
+      classFilter: jamState.classFilter || 'ALL',
+      lessonFilter: jamState.selectedLessonId || 'AUTO'
+    });
+    if (res && res.ok && res.data) {
+      jamState.lastRadarData = res.data;
+      renderJamStudentMatrix(res.data);
+    }
+  } catch (e) {
+  } finally {
+    jamState.pollBusy = false;
+  }
+}
+
+function renderJamStudentMatrix(data) {
+  if (!data) return;
+  const sum = data.summary || {};
+  const onlineStr = (sum.onlineCount || 0) + ' / ' + (sum.rosterCount || 0);
+  if ($('jamTileOnline')) $('jamTileOnline').textContent = onlineStr;
+  if ($('jamBarOnlineChip')) $('jamBarOnlineChip').textContent = '🟢 ' + (sum.onlineCount || 0) + ' Online';
+  if ($('jamTileInLesson')) $('jamTileInLesson').textContent = String(sum.readingCount || 0);
+  if ($('jamTileAnswering')) $('jamTileAnswering').textContent = String(sum.answeringCount || 0);
+  if ($('jamTileAccuracy')) {
+    $('jamTileAccuracy').textContent = sum.classAccuracy != null ? (sum.classAccuracy + '%') : '--';
+  }
+
+  const tbody = $('jamMatrixBody');
+  if (!tbody) return;
+  clearEl(tbody);
+
+  const students = Array.isArray(data.students) ? data.students : [];
+  if (!students.length) {
+    const tr = el('tr');
+    const td = el('td', 'No students found for this class filter.', 'muted');
+    td.colSpan = 8;
+    td.style.padding = '16px';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  students.slice(0, 80).forEach(s => {
+    const tr = el('tr', '', 'soc-row');
+    // 1. Student & Code
+    const tdName = el('td');
+    const nameRow = el('div', '', 's-cell-name');
+    const dotClass = s.presence === 'ONLINE' ? 'online' : (s.presence === 'IDLE' ? 'idle' : 'offline');
+    nameRow.appendChild(el('span', '', 'p-dot ' + dotClass));
+    nameRow.appendChild(el('strong', s.fullName || s.firstName || 'Student'));
+    const codeBadge = el('span', '#' + s.code, 'student-code');
+    codeBadge.style.marginLeft = '6px';
+    nameRow.appendChild(codeBadge);
+    tdName.appendChild(nameRow);
+    tdName.appendChild(el('div', (s.className || '') + ' · ' + (s.teacher || '') + ' · CEFR ' + (s.cefr || s.levelBand || 'A1'), 's-cell-sub'));
+    tr.appendChild(tdName);
+
+    // 2. Live Screen & Activity
+    const tdLoc = el('td');
+    const stageStr = s.presence === 'OFFLINE'
+      ? '⚪ Offline (Code #' + s.code + ')'
+      : ('🟢 ' + (s.stageLabel || s.stage || 'Online') + (s.lessonTitle ? (' · ' + s.lessonTitle) : ''));
+    tdLoc.appendChild(el('div', stageStr, 'stage-badge ' + (s.presence === 'ONLINE' ? 'active' : '')));
+    tr.appendChild(tdLoc);
+
+    // 3..6. Q1..Q4 / T1..T4 cells
+    const cells = Array.isArray(s.cells) ? s.cells : [{}, {}, {}, {}];
+    for (let i = 0; i < 4; i++) {
+      const c = cells[i] || {};
+      const tdQ = el('td', '', 'qcol');
+      let cls = 'q-box ';
+      let txt = '·';
+      if (c.state === 'CORRECT' || c.state === 'PASS') {
+        cls += 'correct';
+        txt = c.letter || (c.score != null ? (c.score + '%') : '✓');
+      } else if (c.state === 'WRONG' || c.state === 'RETRY') {
+        cls += 'wrong';
+        txt = c.letter || (c.score != null ? (c.score + '%') : '✗');
+      } else if (c.state === 'ACTIVE') {
+        cls += 'active';
+        txt = '✍️';
+      } else {
+        cls += 'empty';
+      }
+      tdQ.appendChild(el('span', txt, cls));
+      tr.appendChild(tdQ);
+    }
+
+    // 7. Pace / KP
+    const tdPace = el('td');
+    const wpmVal = s.lastWpm || s.avgWpm || 0;
+    tdPace.appendChild(el('div', (wpmVal ? (wpmVal + ' WPM · ') : '') + '✨ ' + (s.points || 0) + ' KP'));
+    tr.appendChild(tdPace);
+
+    // 8. JAM Director 1-Click Actions (Spotlight + +10 KP)
+    const tdAct = el('td');
+    const actWrap = el('div');
+    actWrap.style.display = 'flex';
+    actWrap.style.gap = '6px';
+    actWrap.style.flexWrap = 'wrap';
+
+    const spotBtn = el('button', '⭐ Spotlight', 'iconBtn');
+    spotBtn.type = 'button';
+    spotBtn.style.padding = '4px 9px';
+    spotBtn.style.fontSize = '11.5px';
+    spotBtn.title = 'Broadcast this student’s latest work or praise to the whole class';
+    spotBtn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const sampleText = s.lastTranscript || s.lastWrittenText ||
+        (s.lessonTitle ? ('Great work on ' + s.lessonTitle + '!') : 'Awesome participation in today’s live class!');
+      await syncJamClassStateToServer({
+        spotlightStudentName: s.fullName || s.firstName,
+        spotlightText: sampleText
+      });
+      showToast('⭐ Spotlighted ' + (s.firstName || s.fullName) + ' on all student screens!');
+    });
+    actWrap.appendChild(spotBtn);
+
+    const kpBtn = el('button', '✨ +10 KP', 'iconBtn');
+    kpBtn.type = 'button';
+    kpBtn.style.padding = '4px 9px';
+    kpBtn.style.fontSize = '11.5px';
+    kpBtn.title = 'Award +10 Bonus Knowledge Points to this student';
+    kpBtn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const res = await rpc('jamAwardBonusKp', {
+        teacherSession: jamState.teacherSession || teacherState.session,
+        studentCode: s.code,
+        points: 10,
+        reason: 'Live Class Participation Bonus'
+      });
+      if (res && res.ok) {
+        showToast('✨ +10 KP awarded to ' + (s.firstName || s.fullName) + '!');
+        pollJamDirectorNow();
+      }
+    });
+    actWrap.appendChild(kpBtn);
+
+    tdAct.appendChild(actWrap);
+    tr.appendChild(tdAct);
+    tbody.appendChild(tr);
+  });
+}
+
+async function spinJamColdCallWheel() {
+  const radarStudents = (jamState.lastRadarData && Array.isArray(jamState.lastRadarData.students))
+    ? jamState.lastRadarData.students
+    : [];
+  const onlinePool = radarStudents.filter(s => s.presence === 'ONLINE' || s.presence === 'IDLE');
+  const pool = onlinePool.length ? onlinePool : getScopedJamRoster();
+  if (!pool.length) {
+    showToast('No students in current class filter.');
+    return;
+  }
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  const name = pick.fullName || pick.firstName || ('Student #' + pick.code);
+  await syncJamClassStateToServer({
+    spotlightStudentName: '🎲 COLD-CALL TURN: ' + name,
+    spotlightText: '🎙️ ' + name + ' (#' + pick.code + ') — You’re up! Share your answer with Jamal and the class!'
+  });
+  showToast('🎲 Cold-Call selected: ' + name + ' (#' + pick.code + ')!');
+}
+
+async function awardJamWholeClassBonusKp() {
+  try {
+    const res = await rpc('jamAwardBonusKp', {
+      teacherSession: jamState.teacherSession || teacherState.session,
+      teacher: jamState.teacherFilter || 'ALL',
+      className: jamState.classFilter || 'ALL',
+      points: 10,
+      reason: 'Whole-Class Energy Bonus from Jamal!'
+    });
+    if (res && res.ok) {
+      showToast('🎉 Awarded +10 Bonus KP to ' + (res.awardedCount || 0) + ' students!');
+      pollJamDirectorNow();
+    }
+  } catch (err) {
+    showToast(err.message || 'Could not award bonus KP.');
+  }
+}
+
+/* ---------- 5. Wire Event Listeners ---------- */
+if ($('topOpenJamBtn')) {
+  $('topOpenJamBtn').addEventListener('click', () => openJamWorkspace({}));
+}
+if ($('openJamFromLoginBtn')) {
+  $('openJamFromLoginBtn').addEventListener('click', () => openJamWorkspace({}));
+}
+if ($('openJamFromTeacherBtn')) {
+  $('openJamFromTeacherBtn').addEventListener('click', () => openJamWorkspace({}));
+}
+if ($('tOpenJamBtn')) {
+  $('tOpenJamBtn').addEventListener('click', () => {
+    openJamWorkspace({
+      teacher: teacherState.teacherFilter || teacherState.teacher || 'ALL'
+    });
+  });
+}
+
+if ($('jamLoginRosterSelect')) {
+  $('jamLoginRosterSelect').addEventListener('change', e => {
+    if (e.target.value && $('studentCode')) {
+      $('studentCode').value = e.target.value;
+    }
+  });
+}
+if ($('jamLoginQuickJoinBtn')) {
+  $('jamLoginQuickJoinBtn').addEventListener('click', () => {
+    const picked = ($('jamLoginRosterSelect') && $('jamLoginRosterSelect').value) ||
+      ($('studentCode') && $('studentCode').value) || '';
+    joinLiveJamClassByCode(picked);
+  });
+}
+
+if ($('jamStudentSyncNowBtn')) {
+  $('jamStudentSyncNowBtn').addEventListener('click', () => {
+    if (jamState.activeClassState) {
+      applyIncomingJamStateToStudent(jamState.activeClassState, true);
+    }
+  });
+}
+
+if ($('jamTeacherSelect')) {
+  $('jamTeacherSelect').addEventListener('change', e => {
+    jamState.teacherFilter = e.target.value || 'ALL';
+    jamState.classFilter = 'ALL';
+    populateJamClassDropdown();
+    renderJamCodesProjectorGrid();
+    updateJamDirectorBarUI();
+    pollJamDirectorNow();
+  });
+}
+if ($('jamClassSelect')) {
+  $('jamClassSelect').addEventListener('change', e => {
+    jamState.classFilter = e.target.value || 'ALL';
+    renderJamCodesProjectorGrid();
+    updateJamDirectorBarUI();
+    pollJamDirectorNow();
+  });
+}
+if ($('jamCefrFilterSelect')) {
+  $('jamCefrFilterSelect').addEventListener('change', e => {
+    jamState.cefrFilter = e.target.value || 'ALL';
+    populateJamLessonDropdown();
+  });
+}
+if ($('jamLessonSearchInput')) {
+  $('jamLessonSearchInput').addEventListener('input', e => {
+    jamState.lessonSearch = e.target.value || '';
+    populateJamLessonDropdown();
+  });
+}
+if ($('jamLessonSelect')) {
+  $('jamLessonSelect').addEventListener('change', e => {
+    jamState.selectedLessonId = e.target.value || '';
+  });
+}
+
+if ($('jamStartSessionBtn')) {
+  $('jamStartSessionBtn').addEventListener('click', async () => {
+    try {
+      await syncJamClassStateToServer({
+        active: true,
+        activityType: 'LESSON',
+        lessonId: jamState.selectedLessonId || '',
+        lockedStep: (jamState.activeClassState && jamState.activeClassState.lockedStep) || 'FREE'
+      });
+      showToast('🟢 Live JAM Class is now ACTIVE! Students can log in with ONLY their 4-digit code.');
+    } catch (err) {
+      if ($('jamErrBox')) $('jamErrBox').textContent = err.message;
+    }
+  });
+}
+
+if ($('jamEndSessionBtn')) {
+  $('jamEndSessionBtn').addEventListener('click', async () => {
+    try {
+      await syncJamClassStateToServer({
+        active: false,
+        lockedStep: 'FREE',
+        promptText: '',
+        spotlightStudentName: '',
+        spotlightText: '',
+        timerSeconds: 0
+      });
+      showToast('⏹ Live JAM Session ended.');
+    } catch (err) {
+      if ($('jamErrBox')) $('jamErrBox').textContent = err.message;
+    }
+  });
+}
+
+if ($('jamToggleCodesGridBtn')) {
+  $('jamToggleCodesGridBtn').addEventListener('click', () => {
+    renderJamCodesProjectorGrid();
+    $('jamCodesProjectorBox').classList.toggle('hidden');
+  });
+}
+if ($('jamCloseCodesGridBtn')) {
+  $('jamCloseCodesGridBtn').addEventListener('click', () => {
+    $('jamCodesProjectorBox').classList.add('hidden');
+  });
+}
+
+if ($('jamPushLessonBtn')) {
+  $('jamPushLessonBtn').addEventListener('click', async () => {
+    if (!jamState.selectedLessonId) {
+      showToast('Pick a lesson first.');
+      return;
+    }
+    try {
+      const st = await syncJamClassStateToServer({
+        active: true,
+        activityType: 'LESSON',
+        lessonId: jamState.selectedLessonId,
+        lockedStep: 'READ'
+      });
+      showToast('🚀 Pushed “' + (st.lessonTitle || st.lessonId) + '” to all student screens!');
+    } catch (err) {
+      showToast(err.message || 'Could not push lesson.');
+    }
+  });
+}
+
+if ($('jamOpenProjectorLessonBtn')) {
+  $('jamOpenProjectorLessonBtn').addEventListener('click', openProjectorLessonInJamMode);
+}
+if ($('jamBarProjectorBtn')) {
+  $('jamBarProjectorBtn').addEventListener('click', openProjectorLessonInJamMode);
+}
+if ($('jamBarCommandCenterBtn')) {
+  $('jamBarCommandCenterBtn').addEventListener('click', () => {
+    showView('jamView');
+    updateJamDirectorBarUI();
+    pollJamDirectorNow();
+  });
+}
+
+// Wire both top bar step pills and deck step buttons
+[
+  ['FREE', 'jamBarStepFreeBtn', 'jamDeckStepFreeBtn'],
+  ['READ', 'jamBarStepReadBtn', 'jamDeckStepReadBtn'],
+  ['Q1', 'jamBarStepQ1Btn', 'jamDeckStepQ1Btn'],
+  ['Q2', 'jamBarStepQ2Btn', 'jamDeckStepQ2Btn'],
+  ['Q3', 'jamBarStepQ3Btn', 'jamDeckStepQ3Btn'],
+  ['Q4', 'jamBarStepQ4Btn', 'jamDeckStepQ4Btn'],
+  ['SUMMARY', 'jamBarStepSumBtn', 'jamDeckStepSumBtn']
+].forEach(tuple => {
+  const step = tuple[0];
+  if ($(tuple[1])) $(tuple[1]).addEventListener('click', () => handleJamDirectorStepClick(step));
+  if ($(tuple[2])) $(tuple[2]).addEventListener('click', () => handleJamDirectorStepClick(step));
+});
+
+// Countdown Timer Buttons
+[
+  ['jamTimer1mBtn', 60],
+  ['jamTimer2mBtn', 120],
+  ['jamTimer3mBtn', 180],
+  ['jamTimer5mBtn', 300],
+  ['jamTimerClearBtn', 0]
+].forEach(pair => {
+  const btn = $(pair[0]);
+  if (btn) {
+    btn.addEventListener('click', async () => {
+      await syncJamClassStateToServer({ timerSeconds: pair[1] });
+      showToast(pair[1] > 0 ? ('⏱ Started ' + (pair[1] / 60) + '-minute class timer!') : '⏱ Timer cleared.');
+    });
+  }
+});
+
+if ($('jamSendPromptBtn')) {
+  $('jamSendPromptBtn').addEventListener('click', async () => {
+    const txt = ($('jamPromptInput') && $('jamPromptInput').value.trim()) || '';
+    await syncJamClassStateToServer({ active: true, promptText: txt });
+    showToast(txt ? '📢 Prompt broadcast to all student screens!' : 'Prompt cleared.');
+  });
+}
+if ($('jamClearPromptBtn')) {
+  $('jamClearPromptBtn').addEventListener('click', async () => {
+    if ($('jamPromptInput')) $('jamPromptInput').value = '';
+    await syncJamClassStateToServer({
+      promptText: '',
+      spotlightStudentName: '',
+      spotlightText: ''
+    });
+    showToast('Cleared live prompt & spotlight.');
+  });
+}
+
+[
+  ['jamPresetReadBtn', '🎧 Eyes on the story! Listen carefully as we read together.'],
+  ['jamPresetPairBtn', '👥 Turn to your partner and compare your answers for 60 seconds!'],
+  ['jamPresetVocabBtn', '✨ Challenge: Include at least 2 target vocabulary words in your answer!'],
+  ['jamPresetFinishBtn', '⏳ Final 60 seconds on this step — wrap up and submit your work!']
+].forEach(pair => {
+  const b = $(pair[0]);
+  if (b) {
+    b.addEventListener('click', async () => {
+      if ($('jamPromptInput')) $('jamPromptInput').value = pair[1];
+      await syncJamClassStateToServer({ active: true, promptText: pair[1] });
+      showToast('📢 Broadcast sent to class!');
+    });
+  }
+});
+
+if ($('jamColdCallBtn')) $('jamColdCallBtn').addEventListener('click', spinJamColdCallWheel);
+if ($('jamBarColdCallBtn')) $('jamBarColdCallBtn').addEventListener('click', spinJamColdCallWheel);
+if ($('jamBonusClassBtn')) $('jamBonusClassBtn').addEventListener('click', awardJamWholeClassBonusKp);
+if ($('jamBarBonusClassBtn')) $('jamBarBonusClassBtn').addEventListener('click', awardJamWholeClassBonusKp);
+
+if ($('jamOpenRadarBtn')) {
+  $('jamOpenRadarBtn').addEventListener('click', () => {
+    showView('teacherView');
+    if (typeof pollTeacherNow === 'function') pollTeacherNow(true);
+  });
+}
+if ($('jamLaunchJigsawBtn')) {
+  $('jamLaunchJigsawBtn').addEventListener('click', () => {
+    if (typeof openJigsawStudio === 'function') openJigsawStudio('jigsaw');
+    else showView('jigsawStudioView');
+  });
+}
+if ($('jamPushPlacementBtn')) {
+  $('jamPushPlacementBtn').addEventListener('click', async () => {
+    await syncJamClassStateToServer({ active: true, activityType: 'PLACEMENT', lockedStep: 'FREE' });
+    showToast('🎯 Pushed Official 2-Task Placement Check to all student screens!');
+  });
+}
+if ($('jamLaunchRoleplayBtn')) {
+  $('jamLaunchRoleplayBtn').addEventListener('click', async () => {
+    await syncJamClassStateToServer({ active: true, activityType: 'ROLEPLAY', lockedStep: 'FREE' });
+    showToast('🎭 Pushed Interactive Roleplay / Co-Writing Stage to student screens!');
+  });
+}
+if ($('jamLaunchExaminerBtn')) {
+  $('jamLaunchExaminerBtn').addEventListener('click', () => {
+    if (typeof openExaminerWorkspace === 'function') {
+      openExaminerWorkspace('');
+    } else {
+      showToast('Select any student row below to inspect or spotlight their work.');
+    }
+  });
+}
+
+// Start login polling immediately on boot
+startJamLoginPolling();
+
+
 /* ---------- Jigsaw Step 2 Spoken Voice Clue Recorder Listeners ---------- */
 $('jVcRecBtn').addEventListener('click', async () => {
   if (state.busy || !jStudent.data) return;
@@ -8731,6 +9909,13 @@ $('jVcUploadBtn').addEventListener('click', async () => {
   try {
     const params = new URLSearchParams(window.location.search || '');
     const modeParam = (params.get('mode') || params.get('role') || '').toLowerCase();
+    const wantJam = window.SPE_JAM_MODE === true ||
+      modeParam === 'jam' || modeParam === 'jamal' || modeParam === 'live' ||
+      /jam\.html/i.test(window.location.pathname || '');
+    if (wantJam) {
+      openJamWorkspace({ teacher: params.get('teacher') || 'ALL' });
+      return;
+    }
     const wantExaminer = window.SPE_EXAMINER_MODE === true ||
       modeParam === 'examiner' || modeParam === 'tester' || modeParam === 'test' ||
       /tester\.html/i.test(window.location.pathname || '');
@@ -8792,6 +9977,10 @@ $('jVcUploadBtn').addEventListener('click', async () => {
       rpc('listSpeakingLessons', state.code).then(data => {
         renderDashboard(data);
         showView('dashboardView');
+        if (typeof startJamStudentAutopilotPolling === 'function') startJamStudentAutopilotPolling();
+        if (data && data.jamState && typeof applyIncomingJamStateToStudent === 'function') {
+          applyIncomingJamStateToStudent(data.jamState, true);
+        }
       }).catch(() => {
         sessionStorage.removeItem('ttsl_portal_auth');
         showView('loginView');

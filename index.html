@@ -12,6 +12,34 @@
 <body>
 
 
+<!-- PERSISTENT TOP JAM DIRECTOR BAR (Visible across all views when Jamal is running a class) -->
+<div id="jamDirectorBar" class="jam-director-bar hidden" role="region" aria-label="JAM Live Class Director Controls">
+  <div class="jam-director-bar-inner">
+    <div class="jam-director-bar-left">
+      <span class="jam-badge" id="jamBarLiveBadge">⚡ JAM LIVE</span>
+      <strong id="jamBarTargetLabel" style="color:#fff;font-size:13.5px">All Classes</strong>
+      <span class="chip" id="jamBarOnlineChip" style="background:rgba(16,185,129,0.18);color:#6ee7b7;border-color:rgba(16,185,129,0.4)">🟢 0 Online</span>
+      <span class="chip hidden" id="jamBarTimerChip" style="background:rgba(245,158,11,0.22);color:#fde68a;border-color:#f59e0b">⏱ 0:00</span>
+    </div>
+    <div class="jam-director-bar-steps" id="jamBarStepGroup">
+      <button type="button" id="jamBarStepFreeBtn" class="jam-step-pill on" title="Let students move at their own pace">🔓 Free</button>
+      <button type="button" id="jamBarStepReadBtn" class="jam-step-pill" title="Sync all student screens to the story &amp; audio">📖 Read &amp; Listen</button>
+      <button type="button" id="jamBarStepQ1Btn" class="jam-step-pill" title="Sync all student screens to Question / Task 1">1️⃣ Q1/T1</button>
+      <button type="button" id="jamBarStepQ2Btn" class="jam-step-pill" title="Sync all student screens to Question / Task 2">2️⃣ Q2/T2</button>
+      <button type="button" id="jamBarStepQ3Btn" class="jam-step-pill" title="Sync all student screens to Question / Task 3">3️⃣ Q3/T3</button>
+      <button type="button" id="jamBarStepQ4Btn" class="jam-step-pill" title="Sync all student screens to Question / Task 4">4️⃣ Q4/T4</button>
+      <button type="button" id="jamBarStepSumBtn" class="jam-step-pill" title="Sync all student screens to Summary">🏆 Summary</button>
+    </div>
+    <div class="jam-director-bar-right">
+      <button type="button" id="jamBarColdCallBtn" class="iconBtn jam-bar-btn" title="Spin Cold-Call Wheel &amp; broadcast random student">🎲 Cold-Call</button>
+      <button type="button" id="jamBarBonusClassBtn" class="iconBtn jam-bar-btn" title="Award +10 Bonus KP to every student in class">✨ +10 KP Class</button>
+      <button type="button" id="jamBarProjectorBtn" class="iconBtn jam-bar-btn" title="Open the pushed lesson right here on the projector">📽️ Projector Lesson</button>
+      <button type="button" id="jamBarCommandCenterBtn" class="iconBtn jam-bar-btn" title="Return to JAM Whole-Class Command Center">🎛️ Command Center</button>
+    </div>
+  </div>
+</div>
+
+
 <!-- PERSISTENT ON-THE-FLY EXAMINER / STUDENT TESTER BAR -->
 <div id="examinerBar" class="examiner-bar hidden" role="region" aria-label="On-The-Fly Student Examiner Controls">
   <div class="examiner-bar-inner">
@@ -46,18 +74,58 @@
     <div class="chip hidden" id="ptsChip">✨ <span id="ptsVal">0</span> KP</div>
     <div class="chip hidden" id="streakChip">🔥 <span id="streakVal">0</span>d</div>
     <div class="chip hidden" id="lvlChip">🎙️ <span id="lvlVal">--</span></div>
+    <button type="button" id="topOpenJamBtn" class="iconBtn jam-top-launch-btn" title="Open JAM VERSION — Run Any Class Live">⚡ JAM Mode</button>
     <button id="settingsBtn" class="iconBtn" title="Reading &amp; Audio Comfort Settings">⚙️</button>
     <button id="logoutBtn" class="iconBtn hidden" title="Sign out / switch account">🚪 Exit</button>
   </div>
 </header>
 
 <main>
+
+  <!-- LIVE JAM STUDENT AUTOPILOT & SPOTLIGHT BANNER (Top of <main> for logged-in students) -->
+  <div id="jamStudentBanner" class="jam-student-banner hidden" role="status" aria-live="polite">
+    <div class="jam-student-banner-top">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="jam-badge">⚡ LIVE WITH JAMAL</span>
+        <strong id="jamStudentStepBadge" style="font-size:14px;color:#fde68a">Class Autopilot Active</strong>
+        <span id="jamStudentLessonTitle" style="font-size:13px;color:#e2e8f0;font-weight:700"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span id="jamStudentTimerBadge" class="chip hidden" style="background:rgba(245,158,11,0.25);color:#fef3c7;border-color:#f59e0b;font-weight:800">⏱ 0:00</span>
+        <button type="button" id="jamStudentSyncNowBtn" class="iconBtn" style="padding:5px 11px;font-size:12px;background:rgba(255,255,255,0.12);color:#fff;border-color:rgba(255,255,255,0.28)">🎯 Go to Class Screen</button>
+      </div>
+    </div>
+    <div id="jamStudentPromptBox" class="jam-student-prompt hidden"></div>
+    <div id="jamStudentSpotlightBox" class="jam-student-spotlight hidden">
+      <div style="font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#fde68a;margin-bottom:3px" id="jamStudentSpotlightHeader">⭐ CLASS SPOTLIGHT</div>
+      <div id="jamStudentSpotlightText" style="font-size:14px;font-weight:700;color:#fff;line-height:1.45"></div>
+    </div>
+  </div>
+
   <!-- =========================================================================
        1. THE TT PORTAL LOGIN WALL (STUDENT + CLASS TEACHER)
        ========================================================================= -->
   <section id="loginView" class="portal-wrap">
     <div class="portal-card" id="loginCard">
       <img src="https://img1.wsimg.com/isteam/ip/e4596783-056a-4255-81a0-601eca83fe81/TALK%20TODAY%20LOGO%20LARGE%20NEW%20TalkToday_Logo_81624.png" alt="Talk Today Logo" class="portal-logo">
+
+      
+      <!-- LIVE JAM CLASS QUICK-JOIN BANNER FOR STUDENTS (Appears automatically when Jamal starts a class!) -->
+      <div id="jamLoginBanner" class="jam-login-banner hidden" role="region" aria-label="Live Class with Jamal Active">
+        <div class="jam-login-banner-head">
+          <span class="jam-badge">⚡ LIVE CLASS ACTIVE</span>
+          <strong id="jamLoginBannerTitle" style="font-size:14.5px;color:#fff">Jamal is running a Live Class right now!</strong>
+        </div>
+        <div id="jamLoginBannerSub" style="font-size:12.5px;color:#e2e8f0;line-height:1.4;margin-top:4px">
+          Enter <strong>ONLY your 4-digit Student Code</strong> below (no email needed!) — or pick your name from the class list to join in 1 tap:
+        </div>
+        <div id="jamLoginRosterWrap" class="jam-login-roster-wrap hidden">
+          <select id="jamLoginRosterSelect" class="portal-input" style="margin:8px 0 6px;background:#0f172a;color:#fff;border-color:#f59e0b" aria-label="Pick your name from the active class">
+            <option value="">🎒 Pick your name from today’s class roster…</option>
+          </select>
+          <button type="button" id="jamLoginQuickJoinBtn" class="btn jam-cta-gold" style="width:100%;padding:10px 14px;font-size:13.5px">⚡ Join Live Class Now (No Email Needed) &rarr;</button>
+        </div>
+      </div>
 
       <div class="role-tabs" role="tablist" aria-label="Sign-in mode">
         <button type="button" id="roleStudentBtn" class="role-tab on">🎒 Student</button>
@@ -98,6 +166,9 @@
         <button id="loginSubmitBtn" type="submit" class="btn" style="width:100%">Open Speaking Lab →</button>
         <button id="staffPreviewBtn" type="button" class="btn ghost" style="width:100%;margin-top:10px;font-size:12px;opacity:0.85;border:1px dashed rgba(255,255,255,0.22)">👑 Staff &amp; Director Preview &rarr;</button>
 
+        <button id="openJamFromLoginBtn" type="button" class="btn jam-launch-cta" style="width:100%;margin-top:8px;font-size:12.5px">⚡ JAM VERSION — Run Any Class Live (Director Autopilot) &rarr;</button>
+
+
         <button id="openExaminerFromStudentBtn" type="button" class="btn ex-launch-cta" style="width:100%;margin-top:8px;font-size:12.5px">⚡ Test Enrolled Students On-The-Fly (Examiner Mode) &rarr;</button>
 
       </form>
@@ -120,6 +191,9 @@
         <input type="text" id="teacherEmailInput" class="portal-input" placeholder="Registered teacher email" autocomplete="username">
         <button id="teacherSubmitBtn" type="submit" class="btn" style="width:100%">Open Live Classroom Radar →</button>
         <button id="teacherToPreviewBtn" type="button" class="btn ghost" style="width:100%;margin-top:10px;font-size:12px;opacity:0.85;border:1px dashed rgba(255,255,255,0.22)">👁️ Launch Student Lab Preview &rarr;</button>
+
+        <button id="openJamFromTeacherBtn" type="button" class="btn jam-launch-cta" style="width:100%;margin-top:8px;font-size:12.5px">⚡ JAM VERSION — Run Any Class Live (Director Autopilot) &rarr;</button>
+
 
         <button id="openExaminerFromTeacherLoginBtn" type="button" class="btn ex-launch-cta" style="width:100%;margin-top:8px;font-size:12.5px">⚡ Test Enrolled Students On-The-Fly (Examiner Mode) &rarr;</button>
 
@@ -550,6 +624,7 @@
           <div class="muted" id="tLastSyncText" style="font-size:12.5px;margin-top:4px">Real-time Socrative student presence, spoken WPM &amp; AI Speaking Coach recordings</div>
         </div>
         <div class="t-controls">
+          <button type="button" id="tOpenJamBtn" class="jigsaw-cta-btn jam-radar-cta" title="Open JAM VERSION Whole-Class Live Director">⚡ JAM Class Autopilot</button>
           <button type="button" id="tOpenExaminerBtn" class="jigsaw-cta-btn" style="background:linear-gradient(135deg,#f59e0b,#ea580c);color:#fff;border:0">⚡ Test Student On-The-Fly</button>
           <button type="button" id="tOpenBreakoutBtn" class="jigsaw-cta-btn">🚪 Breakout Rooms &amp; Groups</button>
           <button type="button" id="tOpenJigsawBtn" class="jigsaw-cta-btn">🧩 Create / Manage Jigsaw</button>
@@ -1484,6 +1559,205 @@
           </div>
         </div>
       </div>
+    </div>
+  </section>
+
+
+  <!-- =========================================================================
+       9. JAM VERSION — WHOLE-CLASS LIVE DIRECTOR & AUTOPILOT COMMAND CENTER
+       ========================================================================= -->
+  <section id="jamView" class="hidden">
+    <!-- Top Command Header -->
+    <div class="jam-hero-card">
+      <div class="jam-hero-top">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span class="jam-badge">⚡ JAM VERSION · LIVE CLASS DIRECTOR</span>
+            <span class="student-name" style="font-size:21px;color:#fff" id="jamHeaderTitle">Run Any Class Live on Autopilot</span>
+            <span class="chip" id="jamSessionStatusChip" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border-color:rgba(16,185,129,0.45)">🟢 READY</span>
+          </div>
+          <div style="font-size:13px;color:#cbd5e1;margin-top:4px" id="jamHeaderSub">
+            Walk into any classroom, pick the Teacher &amp; Class below, and click <strong>Start Live JAM Class</strong>. Students log in with <strong>ONLY their 4-digit code</strong> and every screen follows your pacing in real time!
+          </div>
+        </div>
+        <div class="jam-hero-actions">
+          <button type="button" id="jamToggleCodesGridBtn" class="iconBtn jam-btn-light">📋 Project Class Student Codes</button>
+          <button type="button" id="jamColdCallBtn" class="iconBtn jam-btn-light">🎲 Spin Cold-Call Wheel</button>
+          <button type="button" id="jamBonusClassBtn" class="iconBtn jam-btn-light">✨ +10 KP to Whole Class</button>
+          <button type="button" id="jamOpenRadarBtn" class="iconBtn jam-btn-light">📊 Teacher Radar</button>
+        </div>
+      </div>
+
+      <!-- Step 1: Class Selection + Start/Stop Session + Code-Only Login Toggle -->
+      <div class="jam-class-bar">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1">
+          <span style="font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;color:#fde68a">1. Target Class:</span>
+          <select id="jamTeacherSelect" class="t-select" aria-label="Select Teacher">
+            <option value="ALL">👩‍🏫 All Teachers (School-Wide)</option>
+          </select>
+          <select id="jamClassSelect" class="t-select" aria-label="Select Class Cohort">
+            <option value="ALL">📚 All Classes (School-Wide)</option>
+          </select>
+          <label class="jam-toggle-label" title="When checked, students in this class can log in with ONLY their 4-digit Student Code (no parent email required)">
+            <input type="checkbox" id="jamCodeOnlyCheckbox" checked>
+            <span>🔓 4-Digit Code-Only Login</span>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button type="button" id="jamStartSessionBtn" class="btn jam-cta-gold" style="padding:10px 18px;font-size:13.5px">🟢 START LIVE JAM CLASS</button>
+          <button type="button" id="jamEndSessionBtn" class="btn stop-btn hidden" style="padding:10px 16px;font-size:13px">⏹ End JAM Session</button>
+        </div>
+      </div>
+
+      <!-- Collapsible Projector Student Codes Grid (So any student who forgot their code can see it on the board!) -->
+      <div id="jamCodesProjectorBox" class="jam-codes-projector hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <div>
+            <div style="font-size:11.5px;font-weight:900;text-transform:uppercase;color:#fde68a;letter-spacing:.05em">📽️ PROJECTOR VIEW — 4-DIGIT STUDENT CODES FOR THIS CLASS</div>
+            <div style="font-size:13px;color:#e2e8f0">Students: Type your 4-digit code (or pick your name on the login screen) — no email needed while JAM Live is active!</div>
+          </div>
+          <button type="button" id="jamCloseCodesGridBtn" class="iconBtn jam-btn-light" style="font-size:12px;padding:5px 10px">✕ Hide Codes</button>
+        </div>
+        <div id="jamCodesGrid" class="jam-codes-grid"></div>
+      </div>
+    </div>
+
+    <div id="jamErrBox" class="err" style="margin:10px 0"></div>
+
+    <!-- Main 2-Column Director Deck: Left = Push Lesson & Lockstep Pacing | Right = Broadcast Prompt, Spotlight & Quick Modes -->
+    <div class="jam-deck-grid">
+      <!-- LEFT CARD: Push Any Lesson / Mission + Lockstep Step Controller -->
+      <div class="panel jam-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <div>
+            <div class="eyebrow">2️⃣ PUSH LESSON &amp; LOCKSTEP AUTOPILOT</div>
+            <h2 style="margin:2px 0 0;font-size:17px">Choose Any Story / Unit &amp; Control Every Screen</h2>
+          </div>
+          <span class="chip" id="jamPushedLessonChip">No lesson pushed yet</span>
+        </div>
+
+        <!-- Lesson Filter & Selector -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <select id="jamCefrFilterSelect" class="t-select" style="min-width:120px" aria-label="Filter lessons by CEFR">
+            <option value="ALL">All Levels (80)</option>
+            <option value="A1">🌱 A1</option>
+            <option value="A2">🌿 A2</option>
+            <option value="B1">⚡ B1</option>
+            <option value="B2">🔥 B2</option>
+            <option value="C1">👑 C1/C2</option>
+            <option value="BOOK">📚 Coursebooks</option>
+          </select>
+          <input type="search" id="jamLessonSearchInput" class="j-input" style="flex:1;min-width:160px" placeholder="🔍 Search 80 stories or Kid’s Box / Prepare / Unlock units…">
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+          <select id="jamLessonSelect" class="t-select" style="flex:1;min-width:240px" aria-label="Select Lesson to Push to Class"></select>
+          <button type="button" id="jamPushLessonBtn" class="btn jam-cta-gold" style="padding:9px 16px;font-size:13px">🚀 Push Lesson to All Screens</button>
+          <button type="button" id="jamOpenProjectorLessonBtn" class="btn ghost" style="padding:9px 14px;font-size:13px" title="Open this lesson on your screen with the top JAM Director Bar so you can play audio and step through Q1-Q4 on the projector">📽️ Open on Projector</button>
+        </div>
+
+        <!-- Lockstep Step Pacing Buttons -->
+        <div style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">
+          Lockstep Screen Sync (Click any step to move every student’s screen immediately):
+        </div>
+        <div class="jam-step-deck">
+          <button type="button" id="jamDeckStepFreeBtn" class="jam-deck-step on" data-step="FREE">🔓 Free Pace</button>
+          <button type="button" id="jamDeckStepReadBtn" class="jam-deck-step" data-step="READ">📖 Read &amp; Listen</button>
+          <button type="button" id="jamDeckStepQ1Btn" class="jam-deck-step" data-step="Q1">1️⃣ Q1 / Task 1</button>
+          <button type="button" id="jamDeckStepQ2Btn" class="jam-deck-step" data-step="Q2">2️⃣ Q2 / Task 2</button>
+          <button type="button" id="jamDeckStepQ3Btn" class="jam-deck-step" data-step="Q3">3️⃣ Q3 / Task 3</button>
+          <button type="button" id="jamDeckStepQ4Btn" class="jam-deck-step" data-step="Q4">4️⃣ Q4 / Task 4</button>
+          <button type="button" id="jamDeckStepSumBtn" class="jam-deck-step" data-step="SUMMARY">🏆 Summary</button>
+        </div>
+
+        <!-- Countdown Timer Controls -->
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid var(--edge)">
+          <span style="font-size:12.5px;font-weight:800;color:var(--muted)">⏱ Class Countdown Timer:</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" id="jamTimer1mBtn" class="iconBtn" style="padding:5px 10px;font-size:12px">⏱ 1 min</button>
+            <button type="button" id="jamTimer2mBtn" class="iconBtn" style="padding:5px 10px;font-size:12px">⏱ 2 min</button>
+            <button type="button" id="jamTimer3mBtn" class="iconBtn" style="padding:5px 10px;font-size:12px">⏱ 3 min</button>
+            <button type="button" id="jamTimer5mBtn" class="iconBtn" style="padding:5px 10px;font-size:12px">⏱ 5 min</button>
+            <button type="button" id="jamTimerClearBtn" class="iconBtn" style="padding:5px 10px;font-size:12px">✕ Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT CARD: Live Class Prompt, Spotlight & Whole-Class Activity Launchers -->
+      <div class="panel jam-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <div>
+            <div class="eyebrow">3️⃣ LIVE PROMPT, SPOTLIGHT &amp; GROUP MODES</div>
+            <h2 style="margin:2px 0 0;font-size:17px">Broadcast Instructions or Launch Group Activities</h2>
+          </div>
+        </div>
+
+        <!-- Live Teacher Prompt Broadcast -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <input type="text" id="jamPromptInput" class="j-input" style="flex:1;min-width:210px" placeholder="📢 Broadcast a live instruction or warmup question to every student screen…">
+          <button type="button" id="jamSendPromptBtn" class="btn" style="padding:8px 14px;font-size:12.5px">📢 Broadcast</button>
+          <button type="button" id="jamClearPromptBtn" class="iconBtn" style="padding:8px 11px;font-size:12px" title="Clear prompt &amp; spotlight">✕</button>
+        </div>
+
+        <!-- Quick Preset Prompts -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+          <span class="muted" style="font-size:11.5px;font-weight:700">Quick Broadcasts:</span>
+          <button type="button" id="jamPresetReadBtn" class="part-badge" style="cursor:pointer">🎧 Listen to the story together!</button>
+          <button type="button" id="jamPresetPairBtn" class="part-badge" style="cursor:pointer">👥 Compare with your partner!</button>
+          <button type="button" id="jamPresetVocabBtn" class="part-badge" style="cursor:pointer">✨ Use 2 target words!</button>
+          <button type="button" id="jamPresetFinishBtn" class="part-badge" style="cursor:pointer">⏳ Final 60 seconds!</button>
+        </div>
+
+        <!-- Whole-Class Activity Switchers (Jigsaw / Roleplay / Placement / Giant Chat) -->
+        <div style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">
+          Or Switch Whole Class Activity Mode:
+        </div>
+        <div class="jam-activity-strip">
+          <button type="button" id="jamLaunchJigsawBtn" class="iconBtn" style="flex:1;min-width:140px;font-weight:800;font-size:12.5px">🧩 Jigsaw &amp; Breakout Studio</button>
+          <button type="button" id="jamPushPlacementBtn" class="iconBtn" style="flex:1;min-width:140px;font-weight:800;font-size:12.5px">🎯 Push Official 2-Task Check</button>
+          <button type="button" id="jamLaunchRoleplayBtn" class="iconBtn" style="flex:1;min-width:140px;font-weight:800;font-size:12.5px">🎭 Push Roleplay / Co-Writing</button>
+          <button type="button" id="jamLaunchExaminerBtn" class="iconBtn" style="flex:1;min-width:140px;font-weight:800;font-size:12.5px">⚡ 1-on-1 Student Tester</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 Classroom Pulse Summary Tiles -->
+    <div class="tiles" style="margin-top:16px">
+      <div class="tile">
+        <div class="v" id="jamTileOnline">0 / 0</div>
+        <div class="l">🟢 Online in Class Now</div>
+      </div>
+      <div class="tile">
+        <div class="v" id="jamTileInLesson">0</div>
+        <div class="l">📖 On Pushed Activity</div>
+      </div>
+      <div class="tile">
+        <div class="v" id="jamTileAnswering">0</div>
+        <div class="l">✍️ Working on Q1–Q4 / T1–T4</div>
+      </div>
+      <div class="tile">
+        <div class="v" id="jamTileAccuracy">--</div>
+        <div class="l">🎯 Class Score / Pass Rate</div>
+      </div>
+    </div>
+
+    <!-- Live Student Progress & 1-Click Spotlight / Bonus KP Matrix -->
+    <div class="soc-wrap" style="margin-top:14px">
+      <table class="soc-table">
+        <thead>
+          <tr>
+            <th>Student &amp; 4-Digit Code</th>
+            <th>Live Screen &amp; Status</th>
+            <th class="qcol">1</th>
+            <th class="qcol">2</th>
+            <th class="qcol">3</th>
+            <th class="qcol">4</th>
+            <th>Pace / KP</th>
+            <th>JAM Director Actions</th>
+          </tr>
+        </thead>
+        <tbody id="jamMatrixBody"></tbody>
+      </table>
     </div>
   </section>
 </main>

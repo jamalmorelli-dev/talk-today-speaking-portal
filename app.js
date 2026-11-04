@@ -126,6 +126,7 @@ window.addEventListener('message', ev => {
 
 const LONG_AUDIO_RPCS = new Set([
   'gradeSpeakingMissionTask', 'studentUploadResponse', 'studentSubmitAttempt',
+  'examinerQuickScorePlacementTask', 'examinerFinalizeAttempt',
   'jigsawUploadVoiceClue', 'jigsawPlayVoiceClue', 'jigsawGenerateAiDraft',
   'teacherPlayLabAudio', 'teacherPlayAudio',
   'roleplayTakeTurn', 'roleplayVoices', 'roleplayFinish'
@@ -972,6 +973,7 @@ let activeAudioPlayer = null;
 function stopAllRecordersAndAudio() {
   const recs = [missionRec, plMicRec, plTaskRec, jigsawVoiceRec];
   try { if (typeof rpRec !== 'undefined') recs.push(rpRec); } catch (e) {}
+  try { if (typeof exRec !== 'undefined') recs.push(exRec); } catch (e) {}
   recs.forEach(r => {
     if (r.recording) r.stop().catch(() => {});
     else r.cleanupStream().catch(() => {});
@@ -1066,10 +1068,11 @@ function showView(viewId) {
     stopAllRecordersAndAudio();
   }
   state.activeView = viewId;
-  ['loginView', 'loadingView', 'dashboardView', 'exerciseView', 'placementView', 'summaryView', 'teacherView', 'jigsawStudioView', 'jigsawView', 'roleplayHubView', 'roleplayStageView', 'roleplayDebriefView'].forEach(id => {
+  ['loginView', 'loadingView', 'dashboardView', 'exerciseView', 'placementView', 'summaryView', 'teacherView', 'jigsawStudioView', 'jigsawView', 'roleplayHubView', 'roleplayStageView', 'roleplayDebriefView', 'examinerView'].forEach(id => {
     const node = $(id);
     if (node) node.classList.toggle('hidden', id !== viewId);
   });
+  try { if (typeof updateExaminerBarUI === 'function') updateExaminerBarUI(); } catch (e) {}
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -1409,6 +1412,13 @@ $('logoutBtn').addEventListener('click', () => {
     teacherState.session = '';
     teacherState.lastData = null;
   }
+  try {
+    if (typeof examinerState !== 'undefined') {
+      examinerState.active = false;
+      examinerState.selectedStudent = null;
+      if (typeof updateExaminerBarUI === 'function') updateExaminerBarUI();
+    }
+  } catch (eEx) {}
   try {
     sessionStorage.removeItem('ttsl_portal_auth');
     sessionStorage.removeItem('ttsl_teacher_auth');
@@ -3381,6 +3391,8 @@ setInterval(() => {
   }
 }, 12000);
 
+
+
 /* =========================================================================
    SOCRATIVE LIVE TEACHER CLASSROOM RADAR + LAB AUDIO + PLACEMENT INSPECTOR
    ========================================================================= */
@@ -3906,6 +3918,14 @@ function renderStudentInspector(allStudents) {
   titleWrap.appendChild(hSub);
 
   const headRight = el('div', '', 't-controls');
+  const testFlyBtn = el('button', '⚡ Test ' + (st.firstName || 'Student') + ' On-The-Fly', 'btn');
+  testFlyBtn.type = 'button';
+  testFlyBtn.style.padding = '7px 13px';
+  testFlyBtn.style.fontSize = '12.5px';
+  testFlyBtn.addEventListener('click', () => {
+    openExaminerWorkspace(st.code);
+  });
+  headRight.appendChild(testFlyBtn);
   if (st.latestAttempt && st.latestAttempt.attemptId) {
     const revBtn = el('button', '🎧 Open Official Placement (' + st.latestAttempt.level + ')', 'iconBtn');
     revBtn.type = 'button';
@@ -7048,6 +7068,7 @@ $('brSelectAllRoomsBtn').addEventListener('click', () => {
 $('brClearRoomsBtn').addEventListener('click', () => clearAllBreakoutRoomsNow());
 
 
+
 /* =========================================================================
    ROLEPLAY STAGE (v3.1) — Solo + 1 AI · Solo + AI Cast · Pass-the-Tablet
    ========================================================================= */
@@ -7737,6 +7758,878 @@ $('rpPlayAgainBtn').addEventListener('click', () => {
 $('rpBackToHubBtn').addEventListener('click', openRoleplayHub);
 
 
+/* =========================================================================
+   ON-THE-FLY ENROLLED STUDENT EXAMINER & LIVE 5D GRADING MODULE (v3.3)
+   ========================================================================= */
+const exRec = new VoiceRecorderController('exMicBars');
+
+const examinerState = {
+  active: false,
+  teacherSession: '',
+  role: 'DIRECTOR',
+  teacher: 'DIRECTOR',
+  roster: [],
+  classes: [],
+  teachers: [],
+  promptsByPack: { BEG: [], INT: [], ADV: [] },
+  searchQuery: '',
+  teacherFilter: 'ALL',
+  classFilter: 'ALL',
+  selectedStudent: null,
+  pack: 'INT',
+  attemptId: '',
+  tasks: [],
+  taskIdx: 0,
+  scoredByTask: {},
+  recentAttempts: []
+};
+
+function updateExaminerBarUI() {
+  const bar = $('examinerBar');
+  if (!bar) return;
+  bar.classList.toggle('hidden', !examinerState.active);
+  if (!examinerState.active) return;
+
+  const st = examinerState.selectedStudent;
+  if (st) {
+    $('exBarStudentName').textContent = st.fullName + ' (#' + st.code + ')';
+    $('exBarStudentMeta').textContent = (st.className || 'Cohort') + ' · ' + (st.teacher || 'Teacher') + ' · CEFR ' + (st.homeCefr || st.levelBand || 'A1');
+  } else {
+    $('exBarStudentName').textContent = 'No Student Selected Yet';
+    $('exBarStudentMeta').textContent = 'Pick any enrolled student from the roster';
+  }
+
+  const v = state.activeView;
+  $('exModePlacementBtn').classList.toggle('on', v === 'examinerView' || v === 'placementView');
+  $('exModeMissionsBtn').classList.toggle('on', v === 'dashboardView' || v === 'exerciseView' || v === 'summaryView');
+  $('exModeRoleplayBtn').classList.toggle('on', v === 'roleplayHubView' || v === 'roleplayStageView' || v === 'roleplayDebriefView');
+  $('exModeJigsawBtn').classList.toggle('on', v === 'jigsawView' || v === 'jigsawStudioView');
+  $('exModeRadarBtn').classList.toggle('on', v === 'teacherView');
+}
+
+async function openExaminerWorkspace(preselectStudentCode) {
+  if (state.busy) return;
+  state.busy = true;
+  if ($('loginErr')) $('loginErr').textContent = '';
+  try {
+    if (!examinerState.teacherSession && teacherState.session) {
+      examinerState.teacherSession = teacherState.session;
+    }
+    if (!examinerState.roster.length) {
+      showView('loadingView');
+      $('loadingText').textContent = '⚡ Loading Enrolled Student Roster & On-The-Fly Examiner Studio…';
+      const initRes = await rpc('examinerInit', {
+        teacherSession: examinerState.teacherSession,
+        teacher: teacherState.teacher || 'DIRECTOR',
+        email: 'jamalmorelli'
+      });
+      if (!initRes || !initRes.ok) {
+        throw new Error((initRes && initRes.error) || 'Could not initialize Examiner Mode.');
+      }
+      examinerState.teacherSession = initRes.teacherSession || examinerState.teacherSession;
+      examinerState.role = initRes.role || 'DIRECTOR';
+      examinerState.teacher = initRes.teacher || 'DIRECTOR';
+      if (!teacherState.session && examinerState.teacherSession) {
+        teacherState.session = examinerState.teacherSession;
+        teacherState.role = examinerState.role;
+        teacherState.teacher = examinerState.teacher;
+        teacherState.displayName = initRes.displayName || 'Director';
+      }
+      examinerState.roster = Array.isArray(initRes.roster) ? initRes.roster : [];
+      examinerState.classes = Array.isArray(initRes.classes) ? initRes.classes : [];
+      examinerState.teachers = Array.isArray(initRes.teachers) ? initRes.teachers : [];
+      examinerState.promptsByPack = initRes.promptsByPack || { BEG: [], INT: [], ADV: [] };
+      populateExaminerFilterDropdowns();
+    }
+
+    examinerState.active = true;
+    $('logoutBtn').classList.remove('hidden');
+    $('subBrand').textContent = '⚡ Live On-The-Fly Enrolled Student Examiner';
+    $('exRosterCountChip').textContent = examinerState.roster.length + ' Enrolled Students';
+
+    renderExaminerRosterGrid();
+    showView('examinerView');
+    updateExaminerBarUI();
+
+    const targetCode = preselectStudentCode ||
+      (examinerState.selectedStudent && examinerState.selectedStudent.code) ||
+      (examinerState.roster[0] && examinerState.roster[0].code) || '';
+    if (targetCode && (!examinerState.selectedStudent || String(examinerState.selectedStudent.code) !== String(targetCode))) {
+      state.busy = false;
+      await selectExaminerStudent(targetCode, { stayInExaminerView: true });
+      return;
+    }
+  } catch (err) {
+    if ($('loginErr')) $('loginErr').textContent = err.message || 'Could not open Examiner Mode.';
+    if ($('exErrBox')) $('exErrBox').textContent = err.message || 'Could not open Examiner Mode.';
+    showToast(err.message || 'Examiner initialization failed.');
+  } finally {
+    state.busy = false;
+  }
+}
+
+function populateExaminerFilterDropdowns() {
+  const tSel = $('exTeacherFilterSelect');
+  if (tSel) {
+    clearEl(tSel);
+    const allT = el('option', '👩‍🏫 All Teachers (' + examinerState.roster.length + ')');
+    allT.value = 'ALL';
+    tSel.appendChild(allT);
+    (examinerState.teachers || []).forEach(t => {
+      const o = el('option', '👩‍🏫 ' + t.label);
+      o.value = t.key;
+      tSel.appendChild(o);
+    });
+    tSel.value = examinerState.teacherFilter || 'ALL';
+  }
+
+  populateExaminerClassDropdown();
+}
+
+function populateExaminerClassDropdown() {
+  const cSel = $('exClassFilterSelect');
+  if (!cSel) return;
+  clearEl(cSel);
+  const scoped = getScopedExaminerRoster(false);
+  const classCounts = {};
+  scoped.forEach(s => {
+    if (s.className) classCounts[s.className] = (classCounts[s.className] || 0) + 1;
+  });
+  const allC = el('option', '📚 All Classes (' + scoped.length + ')');
+  allC.value = 'ALL';
+  cSel.appendChild(allC);
+  Object.keys(classCounts).sort().forEach(cName => {
+    const o = el('option', cName + ' (' + classCounts[cName] + ')');
+    o.value = cName;
+    cSel.appendChild(o);
+  });
+  if (examinerState.classFilter !== 'ALL' && !classCounts[examinerState.classFilter]) {
+    examinerState.classFilter = 'ALL';
+  }
+  cSel.value = examinerState.classFilter || 'ALL';
+}
+
+function getScopedExaminerRoster(includeSearch) {
+  const tf = examinerState.teacherFilter || 'ALL';
+  const cf = examinerState.classFilter || 'ALL';
+  const q = includeSearch ? String(examinerState.searchQuery || '').trim().toLowerCase() : '';
+  return (examinerState.roster || []).filter(st => {
+    if (tf !== 'ALL' && st.teacher !== tf) return false;
+    if (cf !== 'ALL' && st.className !== cf) return false;
+    if (q) {
+      const hay = (st.fullName + ' #' + st.code + ' ' + st.className + ' ' + st.teacher + ' ' + st.homeCefr).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderExaminerRosterGrid() {
+  const grid = $('exRosterResultsGrid');
+  if (!grid) return;
+  clearEl(grid);
+  const filtered = getScopedExaminerRoster(true);
+  $('exRosterCountChip').textContent = filtered.length + ' / ' + examinerState.roster.length + ' Students';
+
+  if (!filtered.length) {
+    const empty = el('div', 'No enrolled students match that search. Use “➕ Walk-In / New Student” above to test an unlisted student on the fly.', 'muted');
+    empty.style.padding = '12px';
+    grid.appendChild(empty);
+    return;
+  }
+
+  filtered.slice(0, 80).forEach(st => {
+    const isSel = examinerState.selectedStudent && String(examinerState.selectedStudent.code) === String(st.code);
+    const btn = el('button', '', 'ex-student-card' + (isSel ? ' active' : ''));
+    btn.type = 'button';
+    const top = el('div', '', 'ex-student-card-top');
+    top.appendChild(el('span', st.fullName));
+    top.appendChild(el('span', '#' + st.code, 'student-code'));
+    const sub = el('div', (st.className || '') + ' · ' + (st.teacher || '') + ' · ' + (st.homeCefr || 'A1'), 'ex-student-card-sub');
+    btn.appendChild(top);
+    btn.appendChild(sub);
+    btn.addEventListener('click', () => {
+      selectExaminerStudent(st.code, { stayInExaminerView: true });
+    });
+    grid.appendChild(btn);
+  });
+}
+
+async function selectExaminerStudent(studentCode, opts) {
+  opts = opts || {};
+  if (state.busy) return;
+  state.busy = true;
+  $('exErrBox').textContent = '';
+  try {
+    const res = await rpc('examinerSelectStudent', {
+      teacherSession: examinerState.teacherSession,
+      studentSession: (state.portalContext && state.portalContext.session) || '',
+      studentCode: studentCode,
+      customName: opts.customName || '',
+      customClass: opts.customClass || '',
+      customBand: opts.customBand || '',
+      teacher: examinerState.teacher || 'DIRECTOR',
+      email: 'jamalmorelli'
+    });
+    if (!res || !res.ok) throw new Error((res && res.error) || 'Could not load student profile.');
+
+    examinerState.teacherSession = res.teacherSession || examinerState.teacherSession;
+    examinerState.selectedStudent = res.student;
+    examinerState.recentAttempts = Array.isArray(res.recentPlacementAttempts) ? res.recentPlacementAttempts : [];
+
+    // Add walk-in student to local roster list if not already present
+    if (!examinerState.roster.some(s => String(s.code) === String(res.student.code))) {
+      examinerState.roster.unshift(res.student);
+    }
+
+    // Hydrate standard student portal state so all 80 Missions, Roleplays, Jigsaws & Dashboard work 100% natively!
+    state.portalContext = {
+      code: res.student.code,
+      email: 'director@talktodayusa.org',
+      session: res.session,
+      actor: 'staff',
+      student: res.student,
+      siblings: []
+    };
+    state.code = {
+      code: res.student.code,
+      email: 'director@talktodayusa.org',
+      session: res.session
+    };
+    try {
+      sessionStorage.setItem('ttsl_portal_auth', JSON.stringify(state.portalContext));
+    } catch (e) {}
+
+    renderDashboard(res.appData);
+
+    // Prepare On-The-Fly Examiner Placement state for this student
+    examinerState.pack = res.student.recommendedPack || 'INT';
+    examinerState.attemptId = '';
+    examinerState.scoredByTask = {};
+    examinerState.taskIdx = 0;
+    loadDefaultPackTasksForExaminer(examinerState.pack);
+
+    renderExaminerRosterGrid();
+    renderExaminerSelectedStudentWorkspace();
+    updateExaminerBarUI();
+
+    showToast('⚡ Ready to test ' + res.student.fullName + ' (#' + res.student.code + ')');
+    if (opts.targetView) {
+      showView(opts.targetView);
+      updateExaminerBarUI();
+    } else if (opts.stayInExaminerView || state.activeView === 'examinerView') {
+      showView('examinerView');
+      updateExaminerBarUI();
+    }
+  } catch (err) {
+    $('exErrBox').textContent = err.message || 'Could not switch student.';
+    showToast(err.message || 'Could not switch student.');
+  } finally {
+    state.busy = false;
+  }
+}
+
+function loadDefaultPackTasksForExaminer(pack) {
+  const cleanPack = ['BEG', 'INT', 'ADV'].includes(String(pack || '').toUpperCase())
+    ? String(pack).toUpperCase()
+    : 'INT';
+  examinerState.pack = cleanPack;
+  const bank = (examinerState.promptsByPack && examinerState.promptsByPack[cleanPack]) || [];
+  const t1 = bank.find(p => Number(p.taskNumber) === 1) || bank[0] || {
+    promptId: cleanPack + '_T1_V1',
+    level: cleanPack,
+    taskType: 'speaking_task_1',
+    taskNumber: 1,
+    promptText: 'Tell us about yourself, your daily routine, and something you enjoy doing.',
+    ttsText: 'Tell us about yourself, your daily routine, and something you enjoy doing.',
+    maximumRecordingSeconds: 60
+  };
+  const t2 = bank.find(p => Number(p.taskNumber) === 2) || bank[1] || {
+    promptId: cleanPack + '_T2_V1',
+    level: cleanPack,
+    taskType: 'speaking_task_2',
+    taskNumber: 2,
+    promptText: 'Describe a memorable experience from the past and explain what you learned from it.',
+    ttsText: 'Describe a memorable experience from the past and explain what you learned from it.',
+    maximumRecordingSeconds: 60
+  };
+  examinerState.tasks = [Object.assign({}, t1), Object.assign({}, t2)];
+  examinerState.taskIdx = 0;
+}
+
+function renderExaminerSelectedStudentWorkspace() {
+  const st = examinerState.selectedStudent;
+  const wrap = $('exActiveStudentWrap');
+  if (!st || !wrap) return;
+  wrap.classList.remove('hidden');
+
+  $('exSelectedName').textContent = st.fullName;
+  $('exSelectedCode').textContent = '#' + st.code;
+  $('exSelectedCefrChip').textContent = 'Home CEFR: ' + (st.homeCefr || st.levelBand || 'A1');
+  $('exSelectedPackChip').textContent = 'Rec. Pack: ' + (st.recommendedPack || 'INT');
+
+  const dashProf = (state.lastDashboardData && state.lastDashboardData.profile) || {};
+  const gam = (state.lastDashboardData && state.lastDashboardData.game) || {};
+  const pace = (state.lastDashboardData && state.lastDashboardData.speakingPace) || {};
+  $('exSelectedMeta').textContent =
+    '📚 Class: ' + (st.className || 'Unassigned') +
+    ' · 👩‍🏫 Teacher: ' + (st.teacher || 'Director') +
+    (pace.avgWpm ? (' · ⚡ Avg Pace: ' + pace.avgWpm + ' WPM') : '') +
+    ' · ✨ ' + (gam.points || 0) + ' Speaking KP';
+
+  $('exFinalBandSelect').value = st.homeCefr || dashProf.cefr || 'B1';
+  if (!$('exFinalBandSelect').value) $('exFinalBandSelect').value = 'B1';
+
+  renderExaminerPackAndPromptControls();
+  renderExaminerRubricAndScoredTasks();
+  renderExaminerPastAttempts();
+}
+
+function renderExaminerPackAndPromptControls() {
+  const p = examinerState.pack || 'INT';
+  $('exPackBegBtn').classList.toggle('on', p === 'BEG');
+  $('exPackIntBtn').classList.toggle('on', p === 'INT');
+  $('exPackAdvBtn').classList.toggle('on', p === 'ADV');
+
+  $('exTask1TabBtn').classList.toggle('on', examinerState.taskIdx === 0);
+  $('exTask2TabBtn').classList.toggle('on', examinerState.taskIdx === 1);
+
+  const curTask = examinerState.tasks[examinerState.taskIdx] || examinerState.tasks[0];
+  const promptSel = $('exPromptOverrideSelect');
+  clearEl(promptSel);
+  const allPrompts = [];
+  ['BEG', 'INT', 'ADV'].forEach(lvl => {
+    ((examinerState.promptsByPack && examinerState.promptsByPack[lvl]) || []).forEach(pr => {
+      allPrompts.push(pr);
+    });
+  });
+  allPrompts.forEach(pr => {
+    const o = el('option', '[' + pr.level + ' T' + pr.taskNumber + '] ' + pr.promptText.slice(0, 72) + (pr.promptText.length > 72 ? '…' : ''));
+    o.value = pr.promptId;
+    promptSel.appendChild(o);
+  });
+  if (curTask && curTask.promptId) {
+    promptSel.value = curTask.promptId;
+  }
+
+  if (curTask) {
+    $('exActivePromptBadge').textContent = 'PACK ' + (curTask.level || p) + ' · TASK ' + (examinerState.taskIdx + 1) + ' (' + String(curTask.taskType || 'SPEAKING').replace(/_/g, ' ').toUpperCase() + ')';
+    $('exActivePromptText').textContent = curTask.promptText || '';
+    $('exActivePromptTargets').textContent = curTask.targetFeatures
+      ? ('🎯 Target Features: ' + curTask.targetFeatures)
+      : '🎯 Listen for sentence completeness, intelligibility, fluency, grammar control, and vocabulary range.';
+  }
+
+  $('exAttemptStatusChip').textContent = examinerState.attemptId
+    ? ('Active Attempt: ' + examinerState.attemptId)
+    : ('Pack ' + p + ' Ready');
+
+  resetExaminerMicUI();
+}
+
+function resetExaminerMicUI() {
+  exRec.ensureBars();
+  exRec.resetPreviewUrl();
+  $('exMicStudio').classList.remove('recording');
+  $('exMicStatus').textContent = 'Ready — Click Start Recording Student whenever they are ready to speak';
+  $('exMicTimer').textContent = '0:00';
+  $('exRecStartBtn').classList.remove('hidden');
+  $('exRecStopBtn').classList.add('hidden');
+  $('exRecPlayBtn').classList.add('hidden');
+  $('exRecRetryBtn').classList.add('hidden');
+  $('exRecScoreBtn').classList.add('hidden');
+  $('exRecScoreBtn').disabled = false;
+  $('exRecScoreBtn').textContent = '⚡ Upload & Score 5D Rubric Now →';
+  const prev = $('exPreviewAudio');
+  if (prev) {
+    prev.pause();
+    prev.removeAttribute('src');
+    prev.classList.add('hidden');
+  }
+  $('exUploadStatusText').textContent = '';
+}
+
+function renderExaminerRubricAndScoredTasks() {
+  const keys = Object.keys(examinerState.scoredByTask || {});
+  const items = keys.sort().map(k => examinerState.scoredByTask[k]).filter(Boolean);
+  const scores = items.map(it => it.score).filter(Boolean);
+
+  const avg = field => {
+    const vals = scores.map(s => Number(s[field])).filter(n => !isNaN(n));
+    return vals.length ? (Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10) : '--';
+  };
+
+  const latestBand = (scores.length && scores[scores.length - 1].recommendedBand) || '--';
+  $('exRecommendedBandChip').textContent = 'AI Band: ' + latestBand;
+  $('exRubBand').textContent = latestBand;
+  $('exRubTotal').textContent = String(avg('total'));
+  $('exRubTask').textContent = String(avg('taskCompletion'));
+  $('exRubIntel').textContent = String(avg('intelligibility'));
+  $('exRubFluency').textContent = String(avg('fluency'));
+  $('exRubGrammar').textContent = String(avg('grammarControl'));
+  $('exRubVocab').textContent = String(avg('vocabularyRange'));
+
+  if (latestBand && latestBand !== '--') {
+    $('exFinalBandSelect').value = latestBand;
+  }
+
+  const box = $('exScoredTasksBox');
+  clearEl(box);
+  if (!items.length) {
+    const empty = el('div', 'Record Task 1 (and optionally Task 2) on the left to see the student’s live Whisper transcript, WPM, and 5D AI Rubric scores right here.', 'muted');
+    empty.style.fontSize = '13px';
+    empty.style.padding = '10px 4px';
+    box.appendChild(empty);
+    return;
+  }
+
+  items.forEach(item => {
+    const card = el('div', '', 'ex-scored-card');
+    const top = el('div', '', 'state');
+    const sc = item.score || {};
+    top.appendChild(el('strong', '🎙️ Task ' + item.taskNumber + ' · Score: ' + (sc.total != null ? (sc.total + '/20') : '--') + ' · Band ' + (sc.recommendedBand || '--')));
+    top.appendChild(el('span', (item.wpm || 0) + ' WPM · ' + (item.duration || 0) + 's', 'lvl'));
+    card.appendChild(top);
+
+    if (item.transcript) {
+      const tr = el('div', '🗣️ “' + item.transcript + '”', 'coach-transcript');
+      tr.style.marginTop = '6px';
+      card.appendChild(tr);
+    }
+    if (sc.evidence && sc.evidence.length) {
+      const ev = el('div', '💡 AI Evidence: ' + sc.evidence.join(' · '), 'muted');
+      ev.style.fontSize = '12px';
+      ev.style.marginTop = '5px';
+      card.appendChild(ev);
+    }
+    if (sc.flags && sc.flags.length) {
+      const fl = el('div', '⚠️ Flags: ' + sc.flags.join(', '), 'muted');
+      fl.style.fontSize = '11.5px';
+      fl.style.marginTop = '3px';
+      card.appendChild(fl);
+    }
+    box.appendChild(card);
+  });
+}
+
+function renderExaminerPastAttempts() {
+  const box = $('exPastAttemptsBox');
+  if (!box) return;
+  clearEl(box);
+  const list = examinerState.recentAttempts || [];
+  if (!list.length) {
+    box.appendChild(el('div', 'No prior Official Placement / Biweekly attempts recorded for this student yet.', 'muted'));
+    return;
+  }
+  list.forEach(att => {
+    const row = el('div', '', 'placement-hist-row');
+    const left = el('div');
+    const dt = att.submittedAt || att.createdAt || '';
+    left.appendChild(el('strong', 'Pack ' + (att.level || 'INT') + ' · ' + (dt ? new Date(dt).toLocaleDateString() : 'Recent')));
+    const subSpan = el('span', ' · Status: ' + (att.status || '') + (att.finalBand ? (' · Final Band: ' + att.finalBand) : ''), 'muted');
+    left.appendChild(subSpan);
+    row.appendChild(left);
+
+    const inspectBtn = el('button', '🔎 Load Into 5D Grader', 'iconBtn');
+    inspectBtn.type = 'button';
+    inspectBtn.style.fontSize = '12px';
+    inspectBtn.addEventListener('click', () => {
+      examinerState.attemptId = att.attemptId;
+      examinerState.scoredByTask = {};
+      (att.responses || []).forEach(r => {
+        const sc = (att.scores || []).find(s => Number(s.taskNumber) === Number(r.taskNumber)) || null;
+        const dur = Number(r.duration || 0);
+        const wc = Number(r.wordCount || 0);
+        examinerState.scoredByTask[r.taskNumber] = {
+          taskNumber: r.taskNumber,
+          duration: dur,
+          wordCount: wc,
+          wpm: dur > 0 ? Math.round((wc / dur) * 60) : 0,
+          transcript: r.transcript || '',
+          audioFileId: r.fileId || '',
+          score: sc ? {
+            taskCompletion: Number(sc.taskCompletion || 0),
+            intelligibility: Number(sc.intelligibility || 0),
+            fluency: Number(sc.fluency || 0),
+            grammarControl: Number(sc.grammarControl || 0),
+            vocabularyRange: Number(sc.vocabularyRange || 0),
+            total: Number(sc.total || 0),
+            recommendedBand: String(sc.recommendedBand || ''),
+            evidence: Array.isArray(sc.evidence) ? sc.evidence : [],
+            flags: Array.isArray(sc.flags) ? sc.flags : []
+          } : null
+        };
+      });
+      $('exAttemptStatusChip').textContent = 'Loaded Attempt: ' + att.attemptId;
+      renderExaminerRubricAndScoredTasks();
+    });
+    row.appendChild(inspectBtn);
+    box.appendChild(row);
+  });
+}
+
+async function ensureExaminerAttemptStarted() {
+  if (examinerState.attemptId) return examinerState.attemptId;
+  if (!examinerState.selectedStudent || !state.code) {
+    throw new Error('Select an enrolled student first.');
+  }
+  const startRes = await rpc('studentStartAttempt', {
+    auth: state.code,
+    level: examinerState.pack,
+    device: 'Examiner On-The-Fly Studio',
+    userAgent: navigator.userAgent
+  });
+  if (!startRes || !startRes.ok) {
+    throw new Error((startRes && startRes.error) || 'Could not start placement attempt.');
+  }
+  examinerState.attemptId = startRes.attemptId;
+  if (Array.isArray(startRes.tasks) && startRes.tasks.length >= 2) {
+    examinerState.tasks = startRes.tasks;
+  }
+  await rpc('studentConfirmMic', {
+    auth: state.code,
+    attemptId: examinerState.attemptId,
+    passed: true,
+    detail: 'Examiner On-The-Fly Direct Mic'
+  }).catch(() => {});
+  $('exAttemptStatusChip').textContent = 'Active Attempt: ' + examinerState.attemptId;
+  return examinerState.attemptId;
+}
+
+/* ---------- Examiner Event Listeners ---------- */
+if ($('openExaminerFromStudentBtn')) {
+  $('openExaminerFromStudentBtn').addEventListener('click', () => openExaminerWorkspace(''));
+}
+if ($('openExaminerFromTeacherLoginBtn')) {
+  $('openExaminerFromTeacherLoginBtn').addEventListener('click', () => openExaminerWorkspace(''));
+}
+if ($('tOpenExaminerBtn')) {
+  $('tOpenExaminerBtn').addEventListener('click', () => {
+    openExaminerWorkspace(teacherState.selectedStudentCode || '');
+  });
+}
+if ($('ownerOpenExaminerBtn')) {
+  $('ownerOpenExaminerBtn').addEventListener('click', () => {
+    openExaminerWorkspace('');
+  });
+}
+
+$('exBarSwitchStudentBtn').addEventListener('click', () => {
+  showView('examinerView');
+  updateExaminerBarUI();
+  const sIn = $('exStudentSearchInput');
+  if (sIn) { sIn.focus(); sIn.select(); }
+});
+
+function pickRandomExaminerStudent() {
+  const pool = getScopedExaminerRoster(true);
+  if (!pool.length) {
+    showToast('No students in current filter.');
+    return;
+  }
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  selectExaminerStudent(pick.code, { stayInExaminerView: state.activeView === 'examinerView' });
+}
+
+$('exBarRandomStudentBtn').addEventListener('click', pickRandomExaminerStudent);
+$('exRandomPickBtn').addEventListener('click', pickRandomExaminerStudent);
+
+$('exModePlacementBtn').addEventListener('click', () => {
+  showView('examinerView');
+  updateExaminerBarUI();
+});
+$('exModeMissionsBtn').addEventListener('click', () => {
+  if (!examinerState.selectedStudent) { showToast('Pick an enrolled student first!'); return; }
+  showView('dashboardView');
+  updateExaminerBarUI();
+});
+$('exModeRoleplayBtn').addEventListener('click', () => {
+  if (!examinerState.selectedStudent) { showToast('Pick an enrolled student first!'); return; }
+  const btn = $('openRoleplayBtn');
+  if (btn) btn.click();
+  else showView('roleplayHubView');
+  updateExaminerBarUI();
+});
+$('exModeJigsawBtn').addEventListener('click', () => {
+  if (!examinerState.selectedStudent) { showToast('Pick an enrolled student first!'); return; }
+  if (typeof openJigsawStudio === 'function') openJigsawStudio();
+  else showView('jigsawStudioView');
+  updateExaminerBarUI();
+});
+$('exModeRadarBtn').addEventListener('click', async () => {
+  if (teacherState.session) {
+    showView('teacherView');
+    pollTeacherNow(true);
+    updateExaminerBarUI();
+  } else if (examinerState.teacherSession) {
+    teacherState.session = examinerState.teacherSession;
+    teacherState.role = examinerState.role || 'DIRECTOR';
+    teacherState.teacher = examinerState.teacher || 'DIRECTOR';
+    teacherState.displayName = 'Director (All Classes)';
+    showView('teacherView');
+    pollTeacherNow(true);
+    startTeacherPolling();
+    updateExaminerBarUI();
+  }
+});
+
+$('exStudentSearchInput').addEventListener('input', e => {
+  examinerState.searchQuery = e.target.value || '';
+  renderExaminerRosterGrid();
+});
+$('exTeacherFilterSelect').addEventListener('change', e => {
+  examinerState.teacherFilter = e.target.value || 'ALL';
+  examinerState.classFilter = 'ALL';
+  populateExaminerClassDropdown();
+  renderExaminerRosterGrid();
+});
+$('exClassFilterSelect').addEventListener('change', e => {
+  examinerState.classFilter = e.target.value || 'ALL';
+  renderExaminerRosterGrid();
+});
+
+$('exWalkInToggleBtn').addEventListener('click', () => {
+  $('exWalkInBox').classList.toggle('hidden');
+});
+$('exWalkInStartBtn').addEventListener('click', () => {
+  const code = $('exWalkInCode').value.trim();
+  const name = $('exWalkInName').value.trim();
+  const cls = $('exWalkInClass').value.trim() || 'On-The-Fly Placement';
+  const band = $('exWalkInBand').value || 'B1';
+  if (!name && !code) {
+    $('exErrBox').textContent = 'Enter a student name or code for the walk-in student.';
+    return;
+  }
+  $('exWalkInBox').classList.add('hidden');
+  selectExaminerStudent(code, {
+    customName: name,
+    customClass: cls,
+    customBand: band,
+    stayInExaminerView: true
+  });
+});
+
+$('exOpenFullDashBtn').addEventListener('click', () => {
+  if (!examinerState.selectedStudent) { showToast('Select a student first.'); return; }
+  showView('dashboardView');
+  updateExaminerBarUI();
+});
+$('exLaunchMissionsBtn').addEventListener('click', () => {
+  if (!examinerState.selectedStudent) return;
+  showView('dashboardView');
+  updateExaminerBarUI();
+});
+$('exLaunchRoleplayBtn').addEventListener('click', () => {
+  if (!examinerState.selectedStudent) return;
+  const btn = $('openRoleplayBtn');
+  if (btn) btn.click();
+  else showView('roleplayHubView');
+  updateExaminerBarUI();
+});
+$('exLaunchJigsawBtn').addEventListener('click', () => {
+  if (!examinerState.selectedStudent) return;
+  if (typeof openJigsawStudio === 'function') openJigsawStudio();
+  else showView('jigsawStudioView');
+  updateExaminerBarUI();
+});
+
+['Beg', 'Int', 'Adv'].forEach(tag => {
+  const packCode = tag.toUpperCase();
+  $('exPack' + tag + 'Btn').addEventListener('click', () => {
+    examinerState.attemptId = '';
+    examinerState.scoredByTask = {};
+    loadDefaultPackTasksForExaminer(packCode);
+    renderExaminerPackAndPromptControls();
+    renderExaminerRubricAndScoredTasks();
+  });
+});
+
+$('exStartAttemptBtn').addEventListener('click', async () => {
+  if (state.busy || !examinerState.selectedStudent) return;
+  state.busy = true;
+  $('exStartAttemptBtn').disabled = true;
+  $('exErrBox').textContent = '';
+  try {
+    examinerState.attemptId = '';
+    examinerState.scoredByTask = {};
+    await ensureExaminerAttemptStarted();
+    examinerState.taskIdx = 0;
+    renderExaminerPackAndPromptControls();
+    renderExaminerRubricAndScoredTasks();
+    showToast('🎯 Official Pack ' + examinerState.pack + ' attempt started for ' + examinerState.selectedStudent.fullName);
+  } catch (err) {
+    $('exErrBox').textContent = err.message;
+  } finally {
+    state.busy = false;
+    $('exStartAttemptBtn').disabled = false;
+  }
+});
+
+$('exTask1TabBtn').addEventListener('click', () => {
+  examinerState.taskIdx = 0;
+  renderExaminerPackAndPromptControls();
+});
+$('exTask2TabBtn').addEventListener('click', () => {
+  examinerState.taskIdx = 1;
+  renderExaminerPackAndPromptControls();
+});
+
+$('exPromptOverrideSelect').addEventListener('change', e => {
+  const pid = e.target.value;
+  let found = null;
+  ['BEG', 'INT', 'ADV'].forEach(lvl => {
+    ((examinerState.promptsByPack && examinerState.promptsByPack[lvl]) || []).forEach(pr => {
+      if (pr.promptId === pid) found = pr;
+    });
+  });
+  if (found) {
+    examinerState.tasks[examinerState.taskIdx] = Object.assign({}, found, { taskNumber: examinerState.taskIdx + 1 });
+    renderExaminerPackAndPromptControls();
+  }
+});
+
+$('exHearPromptBtn').addEventListener('click', () => {
+  const curTask = examinerState.tasks[examinerState.taskIdx];
+  if (curTask) speakShortText(curTask.ttsText || curTask.promptText || '');
+});
+
+$('exRecStartBtn').addEventListener('click', async () => {
+  if (state.busy || !examinerState.selectedStudent) return;
+  $('exErrBox').textContent = '';
+  const curTask = examinerState.tasks[examinerState.taskIdx] || examinerState.tasks[0];
+  const maxS = Number((curTask && curTask.maximumRecordingSeconds) || 60) + 15;
+  try {
+    await exRec.start({
+      maxSeconds: maxS,
+      onTick: sec => { $('exMicTimer').textContent = formatAudioClock(sec); },
+      onAutoStop: rec => {
+        if (rec) onExaminerRecordingCaptured(rec);
+        else resetExaminerMicUI();
+      }
+    });
+    $('exMicStudio').classList.add('recording');
+    $('exMicStatus').textContent = '🔴 Recording ' + examinerState.selectedStudent.firstName + ' on Task ' + (examinerState.taskIdx + 1) + '…';
+    $('exRecStartBtn').classList.add('hidden');
+    $('exRecStopBtn').classList.remove('hidden');
+    $('exRecPlayBtn').classList.add('hidden');
+    $('exRecRetryBtn').classList.add('hidden');
+    $('exRecScoreBtn').classList.add('hidden');
+  } catch (err) {
+    $('exErrBox').textContent = err.message || 'Microphone access denied.';
+  }
+});
+
+function onExaminerRecordingCaptured(rec) {
+  $('exMicStudio').classList.remove('recording');
+  $('exMicStatus').textContent = rec.silent
+    ? '🔇 Low/silent audio detected — check mic or click Upload & Score 5D Rubric to test anyway.'
+    : ('✅ Captured ' + rec.durationSeconds + 's — Click “Upload & Score 5D Rubric Now”!');
+  $('exRecStopBtn').classList.add('hidden');
+  $('exRecPlayBtn').classList.remove('hidden');
+  $('exRecRetryBtn').classList.remove('hidden');
+  $('exRecScoreBtn').classList.remove('hidden');
+  const prev = $('exPreviewAudio');
+  if (prev) {
+    prev.src = rec.url;
+    prev.classList.remove('hidden');
+  }
+}
+
+$('exRecStopBtn').addEventListener('click', async () => {
+  const rec = await exRec.stop();
+  if (rec) onExaminerRecordingCaptured(rec);
+  else resetExaminerMicUI();
+});
+
+$('exRecPlayBtn').addEventListener('click', () => {
+  const prev = $('exPreviewAudio');
+  if (prev && prev.src) {
+    prev.currentTime = 0;
+    prev.play().catch(() => {});
+  }
+});
+
+$('exRecRetryBtn').addEventListener('click', () => {
+  resetExaminerMicUI();
+});
+
+$('exRecScoreBtn').addEventListener('click', async () => {
+  if (state.busy || !exRec.lastBlob || !examinerState.selectedStudent) return;
+  state.busy = true;
+  $('exErrBox').textContent = '';
+  $('exRecScoreBtn').disabled = true;
+  $('exRecScoreBtn').textContent = '⏳ Transcribing & Scoring 5D Rubric…';
+  $('exUploadStatusText').textContent = '☁️ Uploading audio, running OpenAI Whisper & grading 5D CEFR Rubric…';
+
+  try {
+    const attemptId = await ensureExaminerAttemptStarted();
+    const curTask = examinerState.tasks[examinerState.taskIdx] || examinerState.tasks[0];
+    const taskNumber = examinerState.taskIdx + 1;
+    const b64 = await blobToBase64(exRec.lastBlob);
+
+    const res = await rpc('examinerQuickScorePlacementTask', {
+      teacherSession: examinerState.teacherSession,
+      auth: state.code,
+      attemptId: attemptId,
+      promptId: curTask.promptId,
+      taskNumber: taskNumber,
+      base64Audio: b64,
+      mimeType: exRec.lastMime,
+      duration: exRec.lastDurationSec,
+      userAgent: navigator.userAgent
+    });
+    if (!res || !res.ok) throw new Error((res && res.error) || 'Could not score recording.');
+
+    examinerState.scoredByTask[taskNumber] = res;
+    renderExaminerRubricAndScoredTasks();
+    $('exUploadStatusText').textContent = '✅ Task ' + taskNumber + ' scored! (' + (res.wpm || 0) + ' WPM · Band ' + ((res.score && res.score.recommendedBand) || '--') + ')';
+    showToast('✅ Task ' + taskNumber + ' 5D Rubric scored!');
+
+    // If Task 1 was just scored, automatically advance the selector tab to Task 2 so the examiner can record Task 2 in 1 click
+    if (taskNumber === 1 && !examinerState.scoredByTask[2]) {
+      examinerState.taskIdx = 1;
+      renderExaminerPackAndPromptControls();
+    } else {
+      resetExaminerMicUI();
+    }
+  } catch (err) {
+    $('exErrBox').textContent = err.message || 'Scoring failed.';
+    $('exRecScoreBtn').disabled = false;
+    $('exRecScoreBtn').textContent = '⚡ Upload & Score 5D Rubric Now →';
+    $('exUploadStatusText').textContent = '';
+  } finally {
+    state.busy = false;
+  }
+});
+
+$('exSaveFinalBandBtn').addEventListener('click', async () => {
+  if (state.busy || !examinerState.attemptId) {
+    showToast('Record and score at least 1 speaking task first.');
+    return;
+  }
+  state.busy = true;
+  $('exSaveFinalBandBtn').disabled = true;
+  $('exSaveFinalBandBtn').textContent = '⏳ Saving…';
+  try {
+    const res = await rpc('examinerFinalizeAttempt', {
+      teacherSession: examinerState.teacherSession,
+      attemptId: examinerState.attemptId,
+      finalBand: $('exFinalBandSelect').value,
+      notes: $('exFinalNotesInput').value.trim()
+    });
+    if (!res || !res.ok) throw new Error((res && res.error) || 'Could not finalize band.');
+    $('exFinalizeMsg').textContent = '✅ Saved! Official Band ' + res.finalBand + ' confirmed for ' + res.fullName + ' (#' + res.studentId + ').';
+    showToast('🏆 Official Band ' + res.finalBand + ' saved for ' + res.fullName + '!');
+  } catch (err) {
+    $('exErrBox').textContent = err.message || 'Could not save final band.';
+  } finally {
+    state.busy = false;
+    $('exSaveFinalBandBtn').disabled = false;
+    $('exSaveFinalBandBtn').textContent = '💾 Confirm & Save Final Band';
+  }
+});
+
+
 /* ---------- Jigsaw Step 2 Spoken Voice Clue Recorder Listeners ---------- */
 $('jVcRecBtn').addEventListener('click', async () => {
   if (state.busy || !jStudent.data) return;
@@ -7837,7 +8730,16 @@ $('jVcUploadBtn').addEventListener('click', async () => {
 
   try {
     const params = new URLSearchParams(window.location.search || '');
-    if (params.get('mode') === 'teacher' || params.get('role') === 'teacher') {
+    const modeParam = (params.get('mode') || params.get('role') || '').toLowerCase();
+    const wantExaminer = window.SPE_EXAMINER_MODE === true ||
+      modeParam === 'examiner' || modeParam === 'tester' || modeParam === 'test' ||
+      /tester\.html/i.test(window.location.pathname || '');
+    if (wantExaminer) {
+      const preStudent = params.get('student') || params.get('code') || '';
+      openExaminerWorkspace(preStudent);
+      return;
+    }
+    if (modeParam === 'teacher') {
       setLoginMode('teacher');
     }
   } catch (e) {}

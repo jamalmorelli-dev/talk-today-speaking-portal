@@ -100,6 +100,7 @@ function mountBridgeIframe() {
     }
   }, 15000);
 }
+try { if ($('gasBridgeHolder')) mountBridgeIframe(); } catch (e) {}
 
 window.addEventListener('message', ev => {
   const d = ev && ev.data;
@@ -1933,11 +1934,16 @@ function filterAndRenderLessons() {
    GUIDED SPEAKING MISSION ENGINE & AI SPEAKING COACH
    ========================================================================= */
 async function openExercise(lessonId) {
-  showView('loadingView');
-  $('loadingText').textContent = 'Opening Speaking Mission & AI Coach...';
+  window.__ttLessonCache = window.__ttLessonCache || {};
+  const cachedRes = window.__ttLessonCache[lessonId];
+  if (!cachedRes) {
+    showView('loadingView');
+    $('loadingText').textContent = 'Opening Speaking Mission & AI Coach...';
+  }
   try {
-    const res = await rpc('openSpeakingLesson', state.code, lessonId);
+    const res = cachedRes || await rpc('openSpeakingLesson', state.code || 'DIRECTOR', lessonId);
     if (!res || !res.ok || !res.lesson) throw new Error((res && res.error) || 'Could not load speaking mission.');
+    window.__ttLessonCache[lessonId] = res;
     const lsn = res.lesson;
     state.lesson = lsn;
     state.tasks = lsn.tasks || [];
@@ -8738,6 +8744,95 @@ if (!jamState.countdownInterval) {
   jamState.countdownInterval = setInterval(updateJamCountdownBadges, 1000);
 }
 
+const JAM_INIT_CACHE_KEY = 'tt_jam_init_cache_v3';
+window.__ttLessonCache = window.__ttLessonCache || {};
+
+function seedJamLessonsFromMediaCatalog() {
+  if (jamState.lessons && jamState.lessons.length >= 40) return;
+  try {
+    if (typeof TTRL_RICH_MEDIA !== 'undefined' && TTRL_RICH_MEDIA && TTRL_RICH_MEDIA.lessons) {
+      const entries = Object.keys(TTRL_RICH_MEDIA.lessons).map(id => {
+        const m = TTRL_RICH_MEDIA.lessons[id] || {};
+        const cefrMatch = String(id).match(/^([A-C][12]|PRE-A1)/i);
+        return {
+          id: id,
+          cefr: m.cefr || (cefrMatch ? cefrMatch[1].toUpperCase() : 'A2'),
+          title: m.title || m.unitTitle || id,
+          topic: m.topic || m.bookTitle || m.cat || '',
+          genre: m.cat || 'story'
+        };
+      });
+      if (entries.length) {
+        jamState.lessons = entries;
+        if (!jamState.selectedLessonId) jamState.selectedLessonId = entries[0].id;
+      }
+    }
+  } catch (e) {}
+}
+
+function hydrateJamStateFromLocalCache() {
+  try {
+    const raw = localStorage.getItem(JAM_INIT_CACHE_KEY);
+    if (!raw) return false;
+    const cached = JSON.parse(raw);
+    if (!cached || !Array.isArray(cached.roster) || !cached.roster.length) return false;
+    if (!jamState.teachers || !jamState.teachers.length) jamState.teachers = cached.teachers || [];
+    if (!jamState.classes || !jamState.classes.length) jamState.classes = cached.classes || [];
+    if (!jamState.roster || !jamState.roster.length) jamState.roster = cached.roster || [];
+    if (!jamState.lessons || !jamState.lessons.length) jamState.lessons = cached.lessons || [];
+    if (!jamState.jigsaws || !jamState.jigsaws.length) jamState.jigsaws = cached.jigsaws || [];
+    if (!jamState.selectedLessonId && jamState.lessons.length) {
+      jamState.selectedLessonId = jamState.lessons[0].id;
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function saveJamStateToLocalCache() {
+  try {
+    if (!jamState.roster || !jamState.roster.length) return;
+    localStorage.setItem(JAM_INIT_CACHE_KEY, JSON.stringify({
+      ts: Date.now(),
+      teachers: jamState.teachers || [],
+      classes: jamState.classes || [],
+      roster: jamState.roster || [],
+      lessons: jamState.lessons || [],
+      jigsaws: jamState.jigsaws || []
+    }));
+  } catch (e) {}
+}
+
+function detectJamLessonRpcName() {
+  if (typeof SPE_CFG !== 'undefined' && SPE_CFG && SPE_CFG.appName) {
+    if (/Writing/i.test(SPE_CFG.appName)) return 'openWritingLesson';
+    if (/Speaking/i.test(SPE_CFG.appName)) return 'openSpeakingLesson';
+  }
+  const titleTxt = (typeof document !== 'undefined' && document.title) || '';
+  if (/Writing/i.test(titleTxt)) return 'openWritingLesson';
+  if (/Speaking/i.test(titleTxt)) return 'openSpeakingLesson';
+  return 'openReadingLesson';
+}
+
+function prefetchJamLesson(lessonId) {
+  const lid = String(lessonId || '').trim();
+  if (!lid) return;
+  window.__ttLessonCache = window.__ttLessonCache || {};
+  if (window.__ttLessonCache[lid]) return;
+  const authArg = (typeof state !== 'undefined' && state.code)
+    ? state.code
+    : ((typeof state !== 'undefined' && state.portalContext && state.portalContext.code)
+        ? state.portalContext.code
+        : 'DIRECTOR');
+  const fnName = detectJamLessonRpcName();
+  rpc(fnName, authArg, lid).then(res => {
+    if (res && res.ok !== false && (res.lesson || res.id || res.questions)) {
+      window.__ttLessonCache[lid] = res;
+    }
+  }).catch(() => {});
+}
+
 /* ---------- 1. Student Login Screen Live JAM Detection & 1-Tap Join ---------- */
 async function pollJamLoginBanner() {
   if (state.activeView !== 'loginView' || jamState.directorMode) return;
@@ -8788,6 +8883,9 @@ async function pollJamLoginBanner() {
     const emailIn = $('parentEmail');
     if (emailIn && sess.allowCodeOnlyLogin) {
       emailIn.placeholder = 'Guardian email (OPTIONAL during Live JAM Class!)';
+    }
+    if (sess.lessonId) {
+      prefetchJamLesson(sess.lessonId);
     }
   } catch (e) {}
 }
@@ -8845,10 +8943,16 @@ async function joinLiveJamClassByCode(studentCode) {
 
     $('logoutBtn').classList.remove('hidden');
     renderDashboard(res.appData);
-    showView('dashboardView');
-    startJamStudentAutopilotPolling();
-    if (res.appData && res.appData.jamState) {
-      applyIncomingJamStateToStudent(res.appData.jamState, true);
+    const initialJam = (res.appData && res.appData.jamState) || jamState.activeClassState;
+    if (initialJam && initialJam.active && initialJam.lessonId && typeof openExercise === 'function') {
+      startJamStudentAutopilotPolling();
+      applyIncomingJamStateToStudent(initialJam, true);
+    } else {
+      showView('dashboardView');
+      startJamStudentAutopilotPolling();
+      if (initialJam) {
+        applyIncomingJamStateToStudent(initialJam, true);
+      }
     }
   } catch (err) {
     showView('loginView');
@@ -8862,10 +8966,14 @@ async function joinLiveJamClassByCode(studentCode) {
 async function pollJamStudentAutopilotOnce() {
   if (jamState.directorMode || !state.portalContext || !state.portalContext.code || state.activeView === 'loginView') return;
   try {
+    const stObj = state.portalContext.student || {};
     const res = await rpc('jamStudentPoll', {
       auth: state.code,
       code: state.portalContext.code,
-      session: state.portalContext.session || (state.code && state.code.session) || ''
+      session: state.portalContext.session || (state.code && state.code.session) || '',
+      teacher: stObj.teacher || '',
+      className: stObj.className || '',
+      fastPoll: true
     });
     if (res && res.ok) {
       applyIncomingJamStateToStudent(res.jamState || { active: false }, false);
@@ -8876,8 +8984,8 @@ async function pollJamStudentAutopilotOnce() {
 function startJamStudentAutopilotPolling() {
   stopJamStudentAutopilotPolling();
   if (jamState.directorMode) return;
-  setTimeout(pollJamStudentAutopilotOnce, 600);
-  jamState.studentPollTimer = setInterval(pollJamStudentAutopilotOnce, 3000);
+  setTimeout(pollJamStudentAutopilotOnce, 250);
+  jamState.studentPollTimer = setInterval(pollJamStudentAutopilotOnce, 1800);
 }
 
 function stopJamStudentAutopilotPolling() {
@@ -9082,18 +9190,32 @@ function updateJamDirectorBarUI() {
 
 async function openJamWorkspace(opts) {
   opts = opts || {};
-  if (state.busy) return;
-  state.busy = true;
   if ($('loginErr')) $('loginErr').textContent = '';
   if ($('jamErrBox')) $('jamErrBox').textContent = '';
 
+  stopJamLoginPolling();
+  stopJamStudentAutopilotPolling();
+
+  // Instant 0ms Stale-While-Revalidate render so JAM View opens at lightning speed
+  hydrateJamStateFromLocalCache();
+  seedJamLessonsFromMediaCatalog();
+  jamState.directorMode = true;
+  if (opts.teacher && opts.teacher !== 'ALL') {
+    jamState.teacherFilter = opts.teacher;
+  }
+
+  populateJamDropdowns();
+  renderJamCodesProjectorGrid();
+  $('logoutBtn').classList.remove('hidden');
+  $('subBrand').textContent = '⚡ JAM VERSION · Whole-Class Live Director';
+  showView('jamView');
+  updateJamDirectorBarUI();
+
+  if (jamState.selectedLessonId) {
+    setTimeout(() => prefetchJamLesson(jamState.selectedLessonId), 50);
+  }
+
   try {
-    stopJamLoginPolling();
-    stopJamStudentAutopilotPolling();
-
-    showView('loadingView');
-    $('loadingText').textContent = '⚡ Opening JAM VERSION — Whole-Class Live Director…';
-
     const initRes = await rpc('jamInit', {
       teacherSession: jamState.teacherSession || teacherState.session || '',
       teacher: opts.teacher || jamState.teacherFilter || teacherState.teacher || 'DIRECTOR',
@@ -9102,6 +9224,10 @@ async function openJamWorkspace(opts) {
     if (!initRes || !initRes.ok) {
       throw new Error((initRes && initRes.error) || 'Could not initialize JAM Director Mode.');
     }
+
+    const userSelectedTeacher = ($('jamTeacherSelect') && $('jamTeacherSelect').value) || jamState.teacherFilter || 'ALL';
+    const userSelectedClass = ($('jamClassSelect') && $('jamClassSelect').value) || jamState.classFilter || 'ALL';
+    const userSelectedLesson = ($('jamLessonSelect') && $('jamLessonSelect').value) || jamState.selectedLessonId || '';
 
     jamState.directorMode = true;
     jamState.teacherSession = initRes.teacherSession || jamState.teacherSession;
@@ -9132,19 +9258,30 @@ async function openJamWorkspace(opts) {
       ? initRes.catalogLessons
       : (Array.isArray(initRes.lessons) && initRes.lessons.length
           ? initRes.lessons
-          : (Array.isArray(radar.availableLessons) ? radar.availableLessons : []));
+          : (Array.isArray(radar.availableLessons) ? radar.availableLessons : jamState.lessons));
     jamState.jigsaws = Array.isArray(initRes.jigsaws) ? initRes.jigsaws : [];
 
-    // Restore any active JAM session state
-    if (Array.isArray(initRes.activeSessions) && initRes.activeSessions.length) {
+    saveJamStateToLocalCache();
+
+    // Restore any active JAM session state if user hasn't manually changed filters yet
+    if (Array.isArray(initRes.activeSessions) && initRes.activeSessions.length && !jamState.activeClassState) {
       jamState.activeClassState = initRes.activeSessions[0];
-      jamState.teacherFilter = jamState.activeClassState.targetTeacher || jamState.activeClassState.teacher || 'ALL';
-      jamState.classFilter = jamState.activeClassState.targetClass || jamState.activeClassState.className || 'ALL';
-      if (jamState.activeClassState.lessonId) {
+      if (userSelectedTeacher === 'ALL') {
+        jamState.teacherFilter = jamState.activeClassState.targetTeacher || jamState.activeClassState.teacher || 'ALL';
+      }
+      if (userSelectedClass === 'ALL') {
+        jamState.classFilter = jamState.activeClassState.targetClass || jamState.activeClassState.className || 'ALL';
+      }
+      if (jamState.activeClassState.lessonId && !userSelectedLesson) {
         jamState.selectedLessonId = jamState.activeClassState.lessonId;
       }
-    } else if (jamState.lessons.length && !jamState.selectedLessonId) {
-      jamState.selectedLessonId = jamState.lessons[0].id;
+    } else {
+      if (userSelectedTeacher !== 'ALL') jamState.teacherFilter = userSelectedTeacher;
+      if (userSelectedClass !== 'ALL') jamState.classFilter = userSelectedClass;
+      if (userSelectedLesson) jamState.selectedLessonId = userSelectedLesson;
+      else if (jamState.lessons.length && !jamState.selectedLessonId) {
+        jamState.selectedLessonId = jamState.lessons[0].id;
+      }
     }
 
     populateJamDropdowns();
@@ -9154,17 +9291,15 @@ async function openJamWorkspace(opts) {
       renderJamStudentMatrix(initRes.radar);
     }
 
-    $('logoutBtn').classList.remove('hidden');
-    $('subBrand').textContent = '⚡ JAM VERSION · Whole-Class Live Director';
-    showView('jamView');
+    if (jamState.selectedLessonId) {
+      prefetchJamLesson(jamState.selectedLessonId);
+    }
+
     updateJamDirectorBarUI();
     startJamDirectorPolling();
   } catch (err) {
-    showView('loginView');
-    if ($('loginErr')) $('loginErr').textContent = err.message || 'Could not open JAM Mode.';
-    showToast(err.message || 'Could not open JAM Mode.');
-  } finally {
-    state.busy = false;
+    if ($('jamErrBox')) $('jamErrBox').textContent = err.message || 'Could not sync JAM Mode.';
+    showToast(err.message || 'Could not sync JAM Mode.');
   }
 }
 
@@ -9336,6 +9471,36 @@ async function syncJamClassStateToServer(overrides) {
     ? overrides.timerMinutes
     : (overrides.timerSeconds !== undefined ? (Number(overrides.timerSeconds || 0) / 60) : undefined);
 
+  const isActive = overrides.active !== undefined ? overrides.active : true;
+  const nextStep = overrides.lockedStep || cur.lockedStep || 'FREE';
+  const nextAct = overrides.activityType || cur.activityType || 'LESSON';
+
+  // Instant 0ms Optimistic UI update before network round-trip
+  jamState.activeClassState = isActive ? {
+    active: true,
+    targetTeacher: jamState.teacherFilter || 'ALL',
+    teacher: jamState.teacherFilter || 'ALL',
+    targetClass: jamState.classFilter || 'ALL',
+    className: jamState.classFilter || 'ALL',
+    allowCodeOnlyLogin: $('jamCodeOnlyCheckbox') ? $('jamCodeOnlyCheckbox').checked : true,
+    activityType: nextAct,
+    lessonId: lessonId,
+    lessonTitle: lessonTitle,
+    jigsawId: overrides.jigsawId !== undefined ? overrides.jigsawId : (cur.jigsawId || ''),
+    roleplaySceneId: overrides.roleplaySceneId !== undefined ? overrides.roleplaySceneId : (cur.roleplaySceneId || ''),
+    lockedStep: nextStep,
+    promptText: overrides.promptText !== undefined ? overrides.promptText : (cur.promptText || ''),
+    spotlight: spotlightPayload,
+    spotlightStudentName: spotName,
+    spotlightText: spotText,
+    timerEndMs: overrides.timerSeconds !== undefined
+      ? (Number(overrides.timerSeconds) > 0 ? (Date.now() + Number(overrides.timerSeconds) * 1000) : 0)
+      : (cur.timerEndMs || 0),
+    updatedAtMs: Date.now()
+  } : null;
+  updateJamDirectorBarUI();
+  if (lessonId) prefetchJamLesson(lessonId);
+
   const payload = {
     teacherSession: jamState.teacherSession || teacherState.session,
     teacher: jamState.teacherFilter || 'ALL',
@@ -9344,14 +9509,14 @@ async function syncJamClassStateToServer(overrides) {
     className: jamState.classFilter || 'ALL',
     targetClass: jamState.classFilter || 'ALL',
     classFilter: jamState.classFilter || 'ALL',
-    active: overrides.active !== undefined ? overrides.active : true,
+    active: isActive,
     allowCodeOnlyLogin: $('jamCodeOnlyCheckbox') ? $('jamCodeOnlyCheckbox').checked : true,
-    activityType: overrides.activityType || cur.activityType || 'LESSON',
+    activityType: nextAct,
     lessonId: lessonId,
     lessonTitle: lessonTitle,
     jigsawId: overrides.jigsawId !== undefined ? overrides.jigsawId : (cur.jigsawId || ''),
     roleplaySceneId: overrides.roleplaySceneId !== undefined ? overrides.roleplaySceneId : (cur.roleplaySceneId || ''),
-    lockedStep: overrides.lockedStep || cur.lockedStep || 'FREE',
+    lockedStep: nextStep,
     promptText: overrides.promptText !== undefined ? overrides.promptText : (cur.promptText || ''),
     spotlight: spotlightPayload,
     spotlightStudentName: spotName,
@@ -9382,28 +9547,17 @@ async function openProjectorLessonInJamMode() {
     return;
   }
 
-  // Ensure staff preview session is initialized so openExercise works smoothly on the projector
+  // Fast synthetic Director preview context so openExercise never blocks on an extra portalOpen round-trip
   if (!state.portalContext || !state.code) {
-    let pRes = await rpc('portalOpen', { code: 'jamalmorelli', email: '' }).catch(() => null);
-    if (!pRes || !pRes.ok) {
-      pRes = await rpc('portalOpen', { code: 'DIRECTOR', email: '' }).catch(() => null);
-    }
-    if (pRes && pRes.ok) {
-      state.portalContext = {
-        code: (pRes.student && pRes.student.code) || 'DIRECTOR',
-        email: 'director@talktodayusa.org',
-        session: pRes.session,
-        actor: 'staff',
-        student: pRes.student || { code: 'DIRECTOR', fullName: 'Director Preview' },
-        siblings: []
-      };
-      state.code = {
-        code: state.portalContext.code,
-        email: 'director@talktodayusa.org',
-        session: pRes.session
-      };
-      renderDashboard(pRes.appData);
-    }
+    state.portalContext = {
+      code: 'DIRECTOR',
+      email: 'director@talktodayusa.org',
+      session: jamState.teacherSession || teacherState.session || 'DIRECTOR',
+      actor: 'staff',
+      student: { code: 'DIRECTOR', fullName: 'Jamal (Director Preview)', homeCefr: 'B1', cefr: 'B1' },
+      siblings: []
+    };
+    state.code = 'DIRECTOR';
   }
 
   jamState.projectorPreviewActive = true;
@@ -9421,6 +9575,10 @@ async function handleJamDirectorStepClick(step) {
       (jamState.activeClassState && jamState.activeClassState.lessonId) || '';
     const pTxt = ($('jamPromptInput') && $('jamPromptInput').value.trim()) ||
       (jamState.activeClassState && jamState.activeClassState.promptText) || '';
+    if (state.activeView === 'exerciseView' || state.activeView === 'summaryView') {
+      applyLockedStepInsideLesson(step);
+    }
+    showToast('⚡ All student screens synced to: ' + describeLockedStepLabel(step));
     await syncJamClassStateToServer({
       active: true,
       activityType: 'LESSON',
@@ -9428,10 +9586,6 @@ async function handleJamDirectorStepClick(step) {
       lockedStep: step,
       promptText: pTxt
     });
-    if (state.activeView === 'exerciseView' || state.activeView === 'summaryView') {
-      applyLockedStepInsideLesson(step);
-    }
-    showToast('⚡ All student screens synced to: ' + describeLockedStepLabel(step));
   } catch (err) {
     showToast(err.message || 'Could not sync step.');
   }
@@ -9734,6 +9888,7 @@ if ($('jamLessonSearchInput')) {
 if ($('jamLessonSelect')) {
   $('jamLessonSelect').addEventListener('change', e => {
     jamState.selectedLessonId = e.target.value || '';
+    if (jamState.selectedLessonId) prefetchJamLesson(jamState.selectedLessonId);
   });
 }
 

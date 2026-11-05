@@ -33,6 +33,7 @@
       <button type="button" id="jamBarStepSumBtn" class="jam-step-pill" title="Sync all student screens to Summary">🏆 Summary</button>
     </div>
     <div class="jam-director-bar-right">
+      <button type="button" id="jamBarQrBtn" class="iconBtn jam-bar-btn" title="Show Scannable Class Join QR Code on Projector">📱 QR Code</button>
       <button type="button" id="jamBarColdCallBtn" class="iconBtn jam-bar-btn" title="Spin Cold-Call Wheel &amp; broadcast random student">🎲 Cold-Call</button>
       <button type="button" id="jamBarBonusClassBtn" class="iconBtn jam-bar-btn" title="Award +10 Bonus KP to every student in class">✨ +10 KP Class</button>
       <button type="button" id="jamBarProjectorBtn" class="iconBtn jam-bar-btn" title="Open the pushed lesson right here on the projector">📽️ Projector Lesson</button>
@@ -627,6 +628,7 @@
         </div>
         <div class="t-controls">
           <button type="button" id="tOpenJamBtn" class="jigsaw-cta-btn jam-radar-cta" title="Open JAM VERSION Whole-Class Live Director">⚡ JAM Class Autopilot</button>
+          <button type="button" id="tShareQrBtn" class="jigsaw-cta-btn jam-qr-cta" title="Show Scannable Class QR Code for Students">📱 Share Class QR</button>
           <button type="button" id="tOpenExaminerBtn" class="jigsaw-cta-btn" style="background:linear-gradient(135deg,#f59e0b,#ea580c);color:#fff;border:0">⚡ Test Student On-The-Fly</button>
           <button type="button" id="tOpenBreakoutBtn" class="jigsaw-cta-btn">🚪 Breakout Rooms &amp; Groups</button>
           <button type="button" id="tOpenJigsawBtn" class="jigsaw-cta-btn">🧩 Create / Manage Jigsaw</button>
@@ -1594,6 +1596,7 @@
               <option value="ALL">📚 All Classes (School-Wide)</option>
             </select>
             <button type="button" id="jamToggleCodesGridBtn" class="btn ghost jam-big-side-btn">🪪 Student Codes</button>
+            <button type="button" id="jamShareQrBtn" class="btn ghost jam-big-side-btn" style="border-color:#f59e0b !important;color:#fde68a !important">📱 QR Code</button>
           </div>
           <label class="jam-toggle-label hidden">
             <input type="checkbox" id="jamCodeOnlyCheckbox" checked>
@@ -1605,9 +1608,12 @@
             <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
               <div>
                 <div style="font-size:12px;font-weight:900;text-transform:uppercase;color:#fde68a;letter-spacing:.05em">🪪 4-DIGIT STUDENT CODES FOR THIS CLASS</div>
-                <div style="font-size:13px;color:#e2e8f0">Students only type their 4-digit code (or tap their name) to join!</div>
+                <div style="font-size:13px;color:#e2e8f0">Students only type their 4-digit code (or tap any card below to show their 1-tap personal QR!)</div>
               </div>
-              <button type="button" id="jamCloseCodesGridBtn" class="iconBtn jam-btn-light" style="font-size:12px;padding:5px 10px">✕ Hide</button>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button type="button" id="jamCodesOpenQrBtn" class="iconBtn jam-btn-light" style="font-size:12px;padding:5px 10px;border-color:#f59e0b !important;color:#fde68a !important">📱 Class QR Code</button>
+                <button type="button" id="jamCloseCodesGridBtn" class="iconBtn jam-btn-light" style="font-size:12px;padding:5px 10px">✕ Hide</button>
+              </div>
             </div>
             <div id="jamCodesGrid" class="jam-codes-grid"></div>
           </div>
@@ -1724,6 +1730,51 @@
       </details>
     </div>
   </section>
+
+  <!-- =========================================================================
+       10. UNIVERSAL TEACHER & JAM DIRECTOR PROJECTOR QR CODE MODAL
+       ========================================================================= -->
+  <div id="jamQrModal" class="jam-qr-modal hidden" role="dialog" aria-modal="true" aria-labelledby="jamQrTitle">
+    <div class="jam-qr-card" id="jamQrCard">
+      <div class="jam-qr-head">
+        <div>
+          <span class="jam-badge" id="jamQrBadge">📱 LIVE CLASS JOIN QR</span>
+          <h2 id="jamQrTitle" class="jam-qr-title">Scan to Join Class Immediately</h2>
+          <div id="jamQrSubtitle" class="jam-qr-sub">Point any iPad, phone, or tablet camera at the QR code below</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button type="button" id="jamQrFullscreenBtn" class="iconBtn jam-btn-light" title="Toggle Giant Projector Zoom">🔍 Projector Zoom</button>
+          <button type="button" id="jamQrCloseBtn" class="iconBtn jam-btn-light" title="Close QR Modal">✕ Close</button>
+        </div>
+      </div>
+
+      <div class="jam-qr-body">
+        <div class="jam-qr-stage" id="jamQrStage">
+          <canvas id="jamQrCanvas" width="340" height="340" class="jam-qr-canvas" aria-label="Scannable Class Join QR Code"></canvas>
+        </div>
+        <div class="jam-qr-controls">
+          <div class="jam-qr-scope-chip" id="jamQrScopeChip">🌍 Whole Class Join Link</div>
+          <label for="jamQrStudentSelect" class="jam-qr-label">🎯 Target Mode (Whole Class or 1-Tap Personal Student QR):</label>
+          <select id="jamQrStudentSelect" class="jam-big-select" style="width:100%;margin-bottom:10px" aria-label="Select Whole Class or Specific Student for QR Code">
+            <option value="">🌍 Whole Class Join QR (Students pick their name or type 4-digit code)</option>
+          </select>
+
+          <div id="jamQrPinBadge" class="jam-qr-pin-badge hidden"></div>
+
+          <label class="jam-qr-label">🔗 Direct Join Link:</label>
+          <div class="jam-qr-url-row">
+            <input type="text" id="jamQrUrlInput" class="j-input jam-qr-url-input" readonly aria-label="Direct Join URL">
+            <button type="button" id="jamQrCopyBtn" class="btn jam-cta-gold" style="padding:10px 16px;font-size:13.5px;white-space:nowrap">📋 Copy Link</button>
+          </div>
+
+          <div class="jam-qr-footer-btns">
+            <button type="button" id="jamQrOpenTabBtn" class="iconBtn jam-btn-light">↗ Test Join Link in New Tab</button>
+            <button type="button" id="jamQrDownloadBtn" class="iconBtn jam-btn-light">⬇️ Save QR Image (PNG)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </main>
 
 <!-- READING & AUDIO COMFORT DRAWER -->

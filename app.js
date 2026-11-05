@@ -8833,29 +8833,113 @@ function prefetchJamLesson(lessonId) {
   }).catch(() => {});
 }
 
-/* ---------- 1. Student Login Screen Live JAM Detection & 1-Tap Join ---------- */
+/* ---------- 1. Student Login Screen Live JAM Detection, QR Deep-Link & 1-Tap Join ---------- */
+const jamDeepLinkParams = {
+  checked: false,
+  autoJoined: false,
+  jam: false,
+  code: '',
+  teacher: '',
+  className: '',
+  lessonId: ''
+};
+
+function parseStudentQrDeepLinkParams() {
+  if (jamDeepLinkParams.checked) return jamDeepLinkParams;
+  jamDeepLinkParams.checked = true;
+  try {
+    const sp = new URLSearchParams(window.location.search || '');
+    const mode = String(sp.get('mode') || sp.get('role') || '').toLowerCase();
+    if (mode === 'jam' || mode === 'jamal' || mode === 'live') return jamDeepLinkParams;
+    const rawCode = String(sp.get('code') || sp.get('student') || sp.get('pin') || '').replace(/\D/g, '').trim();
+    const rawTeacher = String(sp.get('teacher') || sp.get('t') || '').trim();
+    const rawClass = String(sp.get('class') || sp.get('className') || sp.get('c') || '').trim();
+    const rawLesson = String(sp.get('lesson') || sp.get('lessonId') || '').trim();
+    const isJam = sp.get('jam') === '1' || sp.get('qr') === '1' || !!rawCode || !!rawTeacher || !!rawClass;
+    if (isJam) {
+      jamDeepLinkParams.jam = true;
+      jamDeepLinkParams.code = rawCode;
+      jamDeepLinkParams.teacher = rawTeacher;
+      jamDeepLinkParams.className = rawClass;
+      jamDeepLinkParams.lessonId = rawLesson;
+    }
+  } catch (e) {}
+
+  if (typeof google !== 'undefined' && google.script && google.script.url && google.script.url.getLocation) {
+    try {
+      google.script.url.getLocation(loc => {
+        const p = (loc && loc.parameter) || {};
+        const mode = String(p.mode || p.role || '').toLowerCase();
+        if (mode === 'jam' || mode === 'jamal' || mode === 'live') return;
+        const rawCode = String(p.code || p.student || p.pin || '').replace(/\D/g, '').trim();
+        const rawTeacher = String(p.teacher || p.t || '').trim();
+        const rawClass = String(p.class || p.className || p.c || '').trim();
+        const rawLesson = String(p.lesson || p.lessonId || '').trim();
+        if (p.jam === '1' || p.qr === '1' || rawCode || rawTeacher || rawClass) {
+          jamDeepLinkParams.jam = true;
+          if (rawCode) jamDeepLinkParams.code = rawCode;
+          if (rawTeacher) jamDeepLinkParams.teacher = rawTeacher;
+          if (rawClass) jamDeepLinkParams.className = rawClass;
+          if (rawLesson) jamDeepLinkParams.lessonId = rawLesson;
+          applyQrDeepLinkOnLoginScreen();
+        }
+      });
+    } catch (e) {}
+  }
+  return jamDeepLinkParams;
+}
+
+function applyQrDeepLinkOnLoginScreen() {
+  parseStudentQrDeepLinkParams();
+  if (jamState.directorMode || !jamDeepLinkParams.jam) return;
+  if (jamDeepLinkParams.lessonId) {
+    prefetchJamLesson(jamDeepLinkParams.lessonId);
+  }
+  if (jamDeepLinkParams.code && $('studentCode')) {
+    $('studentCode').value = jamDeepLinkParams.code;
+  }
+  if ($('parentEmail')) {
+    $('parentEmail').classList.add('hidden');
+  }
+  if (jamDeepLinkParams.code && !jamDeepLinkParams.autoJoined && state.activeView === 'loginView') {
+    jamDeepLinkParams.autoJoined = true;
+    setTimeout(() => {
+      if (!jamState.directorMode && state.activeView === 'loginView') {
+        joinLiveJamClassByCode(jamDeepLinkParams.code);
+      }
+    }, 80);
+  }
+}
+
 async function pollJamLoginBanner() {
+  parseStudentQrDeepLinkParams();
   if (state.activeView !== 'loginView' || jamState.directorMode) return;
   try {
-    const res = await rpc('jamPublicStatus', {});
+    const res = await rpc('jamPublicStatus', {
+      teacher: jamDeepLinkParams.teacher || '',
+      className: jamDeepLinkParams.className || '',
+      lessonId: jamDeepLinkParams.lessonId || ''
+    });
     const banner = $('jamLoginBanner');
     if (!banner) return;
     if (!res || !res.ok || !res.active || !Array.isArray(res.sessions) || !res.sessions.length) {
-      banner.classList.add('hidden');
-      if ($('parentEmail')) $('parentEmail').classList.remove('hidden');
+      if (!jamDeepLinkParams.jam) {
+        banner.classList.add('hidden');
+        if ($('parentEmail')) $('parentEmail').classList.remove('hidden');
+      }
       return;
     }
     const sess = res.primary || res.sessions[0];
     banner.classList.remove('hidden');
-    if ($('parentEmail') && sess.allowCodeOnlyLogin) {
+    if ($('parentEmail') && (sess.allowCodeOnlyLogin || jamDeepLinkParams.jam)) {
       $('parentEmail').classList.add('hidden');
     }
-    const cName = sess.targetClass || sess.className || 'ALL';
-    const tName = sess.targetTeacher || sess.teacher || 'ALL';
+    const cName = jamDeepLinkParams.className || sess.targetClass || sess.className || 'ALL';
+    const tName = jamDeepLinkParams.teacher || sess.targetTeacher || sess.teacher || 'ALL';
     const targetDesc = (cName && cName !== 'ALL')
       ? ('Class: ' + cName)
       : ((tName && tName !== 'ALL') ? ('Teacher: ' + tName) : 'All Classes');
-    $('jamLoginBannerTitle').textContent = '⚡ Live Class with Jamal Active (' + targetDesc + ')';
+    $('jamLoginBannerTitle').textContent = '⚡ Live Class Active (' + targetDesc + ')';
     $('jamLoginBannerSub').textContent = sess.lessonTitle
       ? ('Today’s Live Activity: “' + sess.lessonTitle + '”. Enter ONLY your 4-digit Student Code below (no email needed!) or pick your name:')
       : 'Enter ONLY your 4-digit Student Code below (no email needed!) or pick your name from the class roster:';
@@ -8864,7 +8948,7 @@ async function pollJamLoginBanner() {
     const rSel = $('jamLoginRosterSelect');
     if (rWrap && rSel && Array.isArray(res.roster) && res.roster.length) {
       rWrap.classList.remove('hidden');
-      const prev = rSel.value;
+      const prev = rSel.value || jamDeepLinkParams.code || '';
       clearEl(rSel);
       const ph = el('option', '🎒 Pick your name from today’s class roster (' + res.roster.length + ' students)…');
       ph.value = '';
@@ -8881,12 +8965,14 @@ async function pollJamLoginBanner() {
 
     // Also make parentEmail placeholder clearly optional while JAM Live is active
     const emailIn = $('parentEmail');
-    if (emailIn && sess.allowCodeOnlyLogin) {
+    if (emailIn && (sess.allowCodeOnlyLogin || jamDeepLinkParams.jam)) {
       emailIn.placeholder = 'Guardian email (OPTIONAL during Live JAM Class!)';
     }
-    if (sess.lessonId) {
-      prefetchJamLesson(sess.lessonId);
+    const targetLesson = sess.lessonId || jamDeepLinkParams.lessonId;
+    if (targetLesson) {
+      prefetchJamLesson(targetLesson);
     }
+    applyQrDeepLinkOnLoginScreen();
   } catch (e) {}
 }
 
@@ -8947,6 +9033,11 @@ async function joinLiveJamClassByCode(studentCode) {
     if (initialJam && initialJam.active && initialJam.lessonId && typeof openExercise === 'function') {
       startJamStudentAutopilotPolling();
       applyIncomingJamStateToStudent(initialJam, true);
+    } else if (jamDeepLinkParams.lessonId && typeof openExercise === 'function') {
+      startJamStudentAutopilotPolling();
+      openExercise(jamDeepLinkParams.lessonId).catch(() => {
+        showView('dashboardView');
+      });
     } else {
       showView('dashboardView');
       startJamStudentAutopilotPolling();
@@ -9439,10 +9530,27 @@ function renderJamCodesProjectorGrid() {
   }
   list.slice(0, 100).forEach(st => {
     const card = el('div', '', 'jam-code-card');
+    card.title = 'Click to show 1-Tap Personal QR Code for ' + st.fullName + ' (#' + st.code + ')';
     const nameSpan = el('span', st.fullName);
+    const rightWrap = el('span');
+    rightWrap.style.display = 'inline-flex';
+    rightWrap.style.alignItems = 'center';
+    rightWrap.style.gap = '6px';
+    const qrIcon = el('span', '📱', 'faint');
+    qrIcon.style.fontSize = '13px';
     const codeSpan = el('span', '#' + st.code, 'jam-code-num');
+    rightWrap.appendChild(qrIcon);
+    rightWrap.appendChild(codeSpan);
     card.appendChild(nameSpan);
-    card.appendChild(codeSpan);
+    card.appendChild(rightWrap);
+    card.addEventListener('click', () => {
+      openJamQrModal({
+        studentCode: st.code,
+        teacher: st.teacher || jamState.teacherFilter || 'ALL',
+        className: st.className || jamState.classFilter || 'ALL',
+        source: 'jam'
+      });
+    });
     grid.appendChild(card);
   });
 }
@@ -9752,6 +9860,22 @@ function renderJamStudentMatrix(data) {
       }
     });
     actWrap.appendChild(kpBtn);
+
+    const qrRowBtn = el('button', '📱 QR', 'iconBtn');
+    qrRowBtn.type = 'button';
+    qrRowBtn.style.padding = '4px 9px';
+    qrRowBtn.style.fontSize = '11.5px';
+    qrRowBtn.title = 'Show 1-Tap Personal Login QR Code for ' + (s.fullName || s.firstName);
+    qrRowBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      openJamQrModal({
+        studentCode: s.code,
+        teacher: s.teacher || jamState.teacherFilter || 'ALL',
+        className: s.className || jamState.classFilter || 'ALL',
+        source: 'jam'
+      });
+    });
+    actWrap.appendChild(qrRowBtn);
 
     tdAct.appendChild(actWrap);
     tr.appendChild(tdAct);
@@ -10086,8 +10210,673 @@ if ($('jamLaunchExaminerBtn')) {
   });
 }
 
-// Start login polling immediately on boot
+/* =========================================================================
+   6. PURE-CANVAS ZERO-INNERHTML QR CODE ENGINE & UNIVERSAL TEACHER QR MODAL
+   ========================================================================= */
+const TtQrMatrixEngine = (function() {
+  const MODE_8BIT_BYTE = 4;
+  const EC_LEVEL = { L: 1, M: 0, Q: 3, H: 2 };
+  const PATTERN_POS = [
+    [], [6,18], [6,22], [6,26], [6,30], [6,34], [6,22,38], [6,24,42], [6,26,46], [6,28,50],
+    [6,30,54], [6,32,58], [6,34,62], [6,26,46,66], [6,26,48,70], [6,26,50,74], [6,30,54,78],
+    [6,30,56,82], [6,30,58,86], [6,34,62,90], [6,28,50,72,94], [6,26,50,74,98], [6,30,54,78,102],
+    [6,28,54,80,106], [6,32,58,84,110], [6,30,58,86,114], [6,34,62,90,118], [6,26,50,74,98,122],
+    [6,30,54,78,102,126], [6,26,52,78,104,130], [6,30,56,82,108,134], [6,34,60,86,112,138],
+    [6,30,58,86,114,142], [6,34,62,90,118,146], [6,30,54,78,102,126,150], [6,24,50,76,102,128,154],
+    [6,28,54,80,106,132,158], [6,32,58,84,110,136,162], [6,26,54,82,110,138,166], [6,30,58,86,114,142,170]
+  ];
+  const CAPACITY_TABLE = [
+    [17,14,11,7],[32,26,20,14],[53,42,32,24],[78,62,46,34],[106,84,60,44],[134,106,74,58],
+    [154,122,86,64],[192,152,108,84],[230,180,130,98],[271,213,151,119],[321,251,177,137],
+    [367,287,203,155],[425,331,241,177],[458,362,258,194],[520,412,292,220],[586,450,322,250],
+    [644,504,364,280],[718,560,394,310],[792,624,442,338],[858,666,482,382],[929,711,509,403],
+    [1003,779,565,439],[1091,857,611,461],[1171,911,661,511],[1273,997,715,535],[1367,1059,751,593],
+    [1465,1125,805,625],[1528,1190,868,658],[1628,1264,908,698],[1732,1370,982,742],[1840,1452,1030,790],
+    [1952,1538,1112,842],[2068,1628,1168,898],[2188,1722,1228,958],[2303,1809,1283,983],[2431,1911,1351,1051],
+    [2563,1989,1423,1093],[2699,2099,1499,1139],[2809,2213,1579,1219],[2953,2331,1663,1273]
+  ];
+  const RS_BLOCK_TABLE = [
+    [1,26,19],[1,26,16],[1,26,13],[1,26,9],[1,44,34],[1,44,28],[1,44,22],[1,44,16],
+    [1,70,55],[1,70,44],[2,35,17],[2,35,13],[1,100,80],[2,50,32],[2,50,24],[4,25,9],
+    [1,134,108],[2,67,43],[2,33,15,2,34,16],[2,33,11,2,34,12],[2,86,68],[4,43,27],[4,43,19],[4,43,15],
+    [2,98,78],[4,49,31],[2,32,14,4,33,15],[4,39,13,1,40,14],[2,121,97],[2,60,38,2,61,39],[4,40,18,2,41,19],[4,40,14,2,41,15],
+    [2,146,116],[3,58,36,2,59,37],[4,36,16,4,37,17],[4,36,12,4,37,13],[2,86,68,2,87,69],[4,69,43,1,70,44],[6,43,19,2,44,20],[6,43,15,2,44,16],
+    [4,101,81],[1,80,50,4,81,51],[4,50,22,4,51,23],[3,36,12,8,37,13],[2,116,92,2,117,93],[6,58,36,2,59,37],[4,46,20,6,47,21],[7,42,14,4,43,15],
+    [4,133,107],[8,59,37,1,60,38],[8,44,20,4,45,21],[12,33,11,4,34,12],[3,145,115,1,146,116],[4,64,40,5,65,41],[11,36,16,5,37,17],[11,36,12,5,37,13],
+    [5,109,87,1,110,88],[5,65,41,5,66,42],[5,54,24,7,55,25],[11,36,12],[5,122,98,1,123,99],[7,73,45,3,74,46],[15,43,19,2,44,20],[3,45,15,13,46,16],
+    [1,135,107,5,136,108],[10,74,46,1,75,47],[1,50,22,15,51,23],[2,42,14,17,43,15],[5,150,120,1,151,121],[9,69,43,4,70,44],[17,50,22,1,51,23],[2,42,14,19,43,15],
+    [3,141,113,4,142,114],[3,70,44,11,71,45],[17,47,21,4,48,22],[9,39,13,16,40,14],[3,135,107,5,136,108],[3,67,41,13,68,42],[15,54,24,5,55,25],[15,43,15,10,44,16]
+  ];
+
+  const EXP_TABLE = new Array(256);
+  const LOG_TABLE = new Array(256);
+  for (let i = 0; i < 8; i++) EXP_TABLE[i] = 1 << i;
+  for (let i = 8; i < 256; i++) EXP_TABLE[i] = EXP_TABLE[i - 4] ^ EXP_TABLE[i - 5] ^ EXP_TABLE[i - 6] ^ EXP_TABLE[i - 8];
+  for (let i = 0; i < 255; i++) LOG_TABLE[EXP_TABLE[i]] = i;
+
+  function glog(n) { return LOG_TABLE[n]; }
+  function gexp(n) {
+    while (n < 0) n += 255;
+    while (n >= 256) n -= 255;
+    return EXP_TABLE[n];
+  }
+
+  function QRPolynom(num, shift) {
+    let offset = 0;
+    while (offset < num.length && num[offset] === 0) offset++;
+    this.num = new Array(num.length - offset + shift);
+    for (let i = 0; i < num.length - offset; i++) this.num[i] = num[i + offset];
+  }
+  QRPolynom.prototype = {
+    get: function(idx) { return this.num[idx]; },
+    getLength: function() { return this.num.length; },
+    multiply: function(e) {
+      const num = new Array(this.getLength() + e.getLength() - 1).fill(0);
+      for (let i = 0; i < this.getLength(); i++) {
+        for (let j = 0; j < e.getLength(); j++) {
+          num[i + j] ^= gexp(glog(this.get(i)) + glog(e.get(j)));
+        }
+      }
+      return new QRPolynom(num, 0);
+    },
+    mod: function(e) {
+      if (this.getLength() - e.getLength() < 0) return this;
+      const ratio = glog(this.get(0)) - glog(e.get(0));
+      const num = this.num.slice();
+      for (let i = 0; i < e.getLength(); i++) num[i] ^= gexp(glog(e.get(i)) + ratio);
+      return new QRPolynom(num, 0).mod(e);
+    }
+  };
+
+  function QRBitBuffer() { this.buffer = []; this.length = 0; }
+  QRBitBuffer.prototype = {
+    put: function(num, length) {
+      for (let i = 0; i < length; i++) this.putBit(((num >>> (length - i - 1)) & 1) === 1);
+    },
+    getLengthInBits: function() { return this.length; },
+    putBit: function(bit) {
+      const bufIndex = Math.floor(this.length / 8);
+      if (this.buffer.length <= bufIndex) this.buffer.push(0);
+      if (bit) this.buffer[bufIndex] |= (0x80 >>> (this.length % 8));
+      this.length++;
+    }
+  };
+
+  function encodeUtf8Bytes(str) {
+    const out = [];
+    for (let i = 0; i < str.length; i++) {
+      const c = str.charCodeAt(i);
+      if (c < 0x80) {
+        out.push(c);
+      } else if (c < 0x800) {
+        out.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+      } else if (c < 0x10000) {
+        out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+      } else {
+        out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 0x3f), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+      }
+    }
+    return out;
+  }
+
+  function getBCHDigit(data) {
+    let digit = 0;
+    while (data !== 0) { digit++; data >>>= 1; }
+    return digit;
+  }
+  function getBCHTypeInfo(data) {
+    let d = data << 10;
+    while (getBCHDigit(d) - getBCHDigit(1335) >= 0) d ^= (1335 << (getBCHDigit(d) - getBCHDigit(1335)));
+    return ((data << 10) | d) ^ 21522;
+  }
+  function getBCHTypeNumber(data) {
+    let d = data << 12;
+    while (getBCHDigit(d) - getBCHDigit(7973) >= 0) d ^= (7973 << (getBCHDigit(d) - getBCHDigit(7973)));
+    return (data << 12) | d;
+  }
+  function getMask(maskPattern, i, j) {
+    switch (maskPattern) {
+      case 0: return (i + j) % 2 === 0;
+      case 1: return i % 2 === 0;
+      case 2: return j % 3 === 0;
+      case 3: return (i + j) % 3 === 0;
+      case 4: return (Math.floor(i / 2) + Math.floor(j / 3)) % 2 === 0;
+      case 5: return (i * j) % 2 + (i * j) % 3 === 0;
+      case 6: return ((i * j) % 2 + (i * j) % 3) % 2 === 0;
+      case 7: return ((i * j) % 3 + (i + j) % 2) % 2 === 0;
+      default: return (i + j) % 2 === 0;
+    }
+  }
+  function getErrorCorrectPolynomial(ecLength) {
+    let a = new QRPolynom([1], 0);
+    for (let i = 0; i < ecLength; i++) a = a.multiply(new QRPolynom([1, gexp(i)], 0));
+    return a;
+  }
+  function getLengthInBits(type) {
+    return type < 10 ? 8 : 16;
+  }
+  function getRSBlocks(typeNumber, ecLevel) {
+    const offset = ecLevel === EC_LEVEL.L ? 0 : (ecLevel === EC_LEVEL.M ? 1 : (ecLevel === EC_LEVEL.Q ? 2 : 3));
+    const rsBlock = RS_BLOCK_TABLE[(typeNumber - 1) * 4 + offset];
+    const list = [];
+    for (let i = 0; i < rsBlock.length / 3; i++) {
+      const count = rsBlock[i * 3 + 0];
+      const totalCount = rsBlock[i * 3 + 1];
+      const dataCount = rsBlock[i * 3 + 2];
+      for (let j = 0; j < count; j++) list.push({ totalCount, dataCount });
+    }
+    return list;
+  }
+
+  function pickTypeNumber(byteLen, ecLevel) {
+    const col = ecLevel === EC_LEVEL.L ? 0 : (ecLevel === EC_LEVEL.M ? 1 : (ecLevel === EC_LEVEL.Q ? 2 : 3));
+    for (let t = 1; t <= 20; t++) {
+      if (CAPACITY_TABLE[t - 1][col] >= byteLen + 3) return t;
+    }
+    return 20;
+  }
+
+  function buildMatrix(text, ecLevel) {
+    const lv = ecLevel !== undefined ? ecLevel : EC_LEVEL.M;
+    const utf8Bytes = encodeUtf8Bytes(String(text || ''));
+    const typeNumber = pickTypeNumber(utf8Bytes.length, lv);
+    const moduleCount = typeNumber * 4 + 17;
+
+    const rsBlocks = getRSBlocks(typeNumber, lv);
+    const buffer = new QRBitBuffer();
+    buffer.put(MODE_8BIT_BYTE, 4);
+    buffer.put(utf8Bytes.length, getLengthInBits(typeNumber));
+    for (let i = 0; i < utf8Bytes.length; i++) buffer.put(utf8Bytes[i], 8);
+
+    let totalDataCount = 0;
+    for (let i = 0; i < rsBlocks.length; i++) totalDataCount += rsBlocks[i].dataCount;
+    if (buffer.getLengthInBits() + 4 <= totalDataCount * 8) buffer.put(0, 4);
+    while (buffer.getLengthInBits() % 8 !== 0) buffer.putBit(false);
+    while (buffer.getLengthInBits() < totalDataCount * 8) {
+      buffer.put(236, 8);
+      if (buffer.getLengthInBits() >= totalDataCount * 8) break;
+      buffer.put(17, 8);
+    }
+
+    let offset = 0;
+    let maxDcCount = 0;
+    let maxEcCount = 0;
+    const dcdata = new Array(rsBlocks.length);
+    const ecdata = new Array(rsBlocks.length);
+    for (let r = 0; r < rsBlocks.length; r++) {
+      const dcCount = rsBlocks[r].dataCount;
+      const ecCount = rsBlocks[r].totalCount - dcCount;
+      maxDcCount = Math.max(maxDcCount, dcCount);
+      maxEcCount = Math.max(maxEcCount, ecCount);
+      dcdata[r] = new Array(dcCount);
+      for (let i = 0; i < dcCount; i++) dcdata[r][i] = 0xff & buffer.buffer[i + offset];
+      offset += dcCount;
+      const rsPoly = getErrorCorrectPolynomial(ecCount);
+      const rawPoly = new QRPolynom(dcdata[r], rsPoly.getLength() - 1);
+      const modPoly = rawPoly.mod(rsPoly);
+      ecdata[r] = new Array(rsPoly.getLength() - 1);
+      for (let i = 0; i < ecdata[r].length; i++) {
+        const modIndex = i + modPoly.getLength() - ecdata[r].length;
+        ecdata[r][i] = modIndex >= 0 ? modPoly.get(modIndex) : 0;
+      }
+    }
+
+    const dataBytes = [];
+    for (let i = 0; i < maxDcCount; i++) {
+      for (let r = 0; r < rsBlocks.length; r++) {
+        if (i < dcdata[r].length) dataBytes.push(dcdata[r][i]);
+      }
+    }
+    for (let i = 0; i < maxEcCount; i++) {
+      for (let r = 0; r < rsBlocks.length; r++) {
+        if (i < ecdata[r].length) dataBytes.push(ecdata[r][i]);
+      }
+    }
+
+    function createModulesWithMask(maskPattern) {
+      const modules = new Array(moduleCount);
+      for (let r = 0; r < moduleCount; r++) modules[r] = new Array(moduleCount).fill(null);
+
+      function setupFinder(row, col) {
+        for (let r = -1; r <= 7; r++) {
+          if (row + r <= -1 || moduleCount <= row + r) continue;
+          for (let c = -1; c <= 7; c++) {
+            if (col + c <= -1 || moduleCount <= col + c) continue;
+            modules[row + r][col + c] = (
+              (0 <= r && r <= 6 && (c === 0 || c === 6)) ||
+              (0 <= c && c <= 6 && (r === 0 || r === 6)) ||
+              (2 <= r && r <= 4 && 2 <= c && c <= 4)
+            );
+          }
+        }
+      }
+      setupFinder(0, 0);
+      setupFinder(moduleCount - 7, 0);
+      setupFinder(0, moduleCount - 7);
+
+      const pos = PATTERN_POS[typeNumber - 1] || [];
+      for (let i = 0; i < pos.length; i++) {
+        for (let j = 0; j < pos.length; j++) {
+          const row = pos[i], col = pos[j];
+          if (modules[row][col] !== null) continue;
+          for (let r = -2; r <= 2; r++) {
+            for (let c = -2; c <= 2; c++) {
+              modules[row + r][col + c] = (r === -2 || r === 2 || c === -2 || c === 2 || (r === 0 && c === 0));
+            }
+          }
+        }
+      }
+
+      for (let i = 8; i < moduleCount - 8; i++) {
+        if (modules[i][6] === null) modules[i][6] = (i % 2 === 0);
+        if (modules[6][i] === null) modules[6][i] = (i % 2 === 0);
+      }
+
+      const typeInfoBits = getBCHTypeInfo((lv << 3) | maskPattern);
+      for (let i = 0; i < 15; i++) {
+        const mod = ((typeInfoBits >> i) & 1) === 1;
+        if (i < 6) modules[i][8] = mod;
+        else if (i < 8) modules[i + 1][8] = mod;
+        else modules[moduleCount - 15 + i][8] = mod;
+
+        if (i < 8) modules[8][moduleCount - i - 1] = mod;
+        else if (i < 9) modules[8][15 - i] = mod;
+        else modules[8][15 - i - 1] = mod;
+      }
+      modules[moduleCount - 8][8] = true;
+
+      if (typeNumber >= 7) {
+        const typeNumBits = getBCHTypeNumber(typeNumber);
+        for (let i = 0; i < 18; i++) {
+          const mod = ((typeNumBits >> i) & 1) === 1;
+          modules[Math.floor(i / 3)][(i % 3) + moduleCount - 8 - 3] = mod;
+          modules[(i % 3) + moduleCount - 8 - 3][Math.floor(i / 3)] = mod;
+        }
+      }
+
+      let inc = -1;
+      let row = moduleCount - 1;
+      let bitIndex = 7;
+      let byteIndex = 0;
+      for (let col = moduleCount - 1; col > 0; col -= 2) {
+        if (col === 6) col--;
+        for (;;) {
+          for (let c = 0; c < 2; c++) {
+            if (modules[row][col - c] === null) {
+              let dark = false;
+              if (byteIndex < dataBytes.length) {
+                dark = (((dataBytes[byteIndex] >>> bitIndex) & 1) === 1);
+              }
+              if (getMask(maskPattern, row, col - c)) dark = !dark;
+              modules[row][col - c] = dark;
+              bitIndex--;
+              if (bitIndex === -1) { byteIndex++; bitIndex = 7; }
+            }
+          }
+          row += inc;
+          if (row < 0 || moduleCount <= row) {
+            row -= inc;
+            inc = -inc;
+            break;
+          }
+        }
+      }
+      return modules;
+    }
+
+    function scoreModules(modules) {
+      let lost = 0;
+      for (let r = 0; r < moduleCount; r++) {
+        for (let c = 0; c < moduleCount; c++) {
+          let same = 0;
+          const dark = modules[r][c];
+          for (let dr = -1; dr <= 1; dr++) {
+            if (r + dr < 0 || r + dr >= moduleCount) continue;
+            for (let dc = -1; dc <= 1; dc++) {
+              if (c + dc < 0 || c + dc >= moduleCount || (dr === 0 && dc === 0)) continue;
+              if (dark === modules[r + dr][c + dc]) same++;
+            }
+          }
+          if (same > 5) lost += (3 + same - 5);
+        }
+      }
+      return lost;
+    }
+
+    let bestModules = null;
+    let bestScore = Infinity;
+    for (let m = 0; m < 8; m++) {
+      const candidate = createModulesWithMask(m);
+      const sc = scoreModules(candidate);
+      if (sc < bestScore) { bestScore = sc; bestModules = candidate; }
+    }
+    return { modules: bestModules, count: moduleCount, typeNumber: typeNumber };
+  }
+
+  function renderToCanvas(canvas, text, opts) {
+    opts = opts || {};
+    if (!canvas || typeof canvas.getContext !== 'function') return null;
+    const size = Number(opts.size || 340);
+    const margin = Number(opts.margin !== undefined ? opts.margin : 2);
+    const darkColor = opts.colorDark || '#090d16';
+    const lightColor = opts.colorLight || '#ffffff';
+
+    const matrix = buildMatrix(String(text || ''), EC_LEVEL.M);
+    const totalModules = matrix.count + margin * 2;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = lightColor;
+    ctx.fillRect(0, 0, size, size);
+
+    const cell = size / totalModules;
+    ctx.fillStyle = darkColor;
+    let darkModulesCount = 0;
+    for (let r = 0; r < matrix.count; r++) {
+      for (let c = 0; c < matrix.count; c++) {
+        if (matrix.modules[r][c]) {
+          darkModulesCount++;
+          const x = Math.floor((c + margin) * cell);
+          const y = Math.floor((r + margin) * cell);
+          const w = Math.ceil((c + margin + 1) * cell) - x;
+          const h = Math.ceil((r + margin + 1) * cell) - y;
+          ctx.fillRect(x, y, w, h);
+        }
+      }
+    }
+    return {
+      ok: true,
+      moduleCount: matrix.count,
+      darkModulesCount: darkModulesCount,
+      typeNumber: matrix.typeNumber,
+      size: size
+    };
+  }
+
+  return { buildMatrix, renderToCanvas };
+})();
+window.TtQrMatrixEngine = TtQrMatrixEngine;
+
+function getCanonicalStudentJoinBaseUrl() {
+  try {
+    const loc = window.location;
+    const href = String(loc.href || '');
+    if (loc.hostname && loc.hostname.includes('github.io')) {
+      const pathClean = loc.pathname.replace(/\/(jam|tester|index)\.html$/i, '/');
+      return loc.origin + (pathClean.endsWith('/') ? pathClean : (pathClean + '/'));
+    }
+    if (typeof SPE_CFG !== 'undefined' && SPE_CFG && SPE_CFG.appsScriptWebAppUrl && /googleusercontent\.com/i.test(loc.hostname || '')) {
+      return SPE_CFG.appsScriptWebAppUrl;
+    }
+  } catch (e) {}
+  return 'https://script.google.com/macros/s/AKfycbznJhRVGOUBJEp4clA1bdGGYM5OlorlA3I9EchPg1PSsADJSvE6xRzKE1FOaQfmC-sI/exec';
+}
+
+function getEffectiveTeacherQrContext(opts) {
+  opts = opts || {};
+  let teacher = opts.teacher || '';
+  let className = opts.className || '';
+  let lessonId = opts.lessonId || '';
+  let studentCode = opts.studentCode || '';
+
+  if (!teacher) {
+    if (state.activeView === 'teacherView' && typeof teacherState !== 'undefined') {
+      teacher = (teacherState.role === 'DIRECTOR' ? teacherState.teacherFilter : teacherState.teacher) || 'ALL';
+    } else if (state.activeView === 'jigsawStudioView') {
+      teacher = (typeof teacherState !== 'undefined' && teacherState.teacher) || jamState.teacherFilter || 'ALL';
+    } else {
+      teacher = jamState.teacherFilter || (typeof teacherState !== 'undefined' && teacherState.teacher) || 'ALL';
+    }
+  }
+
+  if (!className) {
+    const jsClsNode = document.querySelector('#jigsawStudioView select');
+    if (state.activeView === 'teacherView' && typeof teacherState !== 'undefined') {
+      className = ($('tClassSelect') && $('tClassSelect').value) || teacherState.classFilter || 'ALL';
+    } else if (state.activeView === 'jigsawStudioView' && jsClsNode && jsClsNode.value) {
+      className = jsClsNode.value;
+    } else {
+      className = ($('jamClassSelect') && $('jamClassSelect').value) || jamState.classFilter || 'ALL';
+    }
+  }
+
+  if (!lessonId) {
+    if (state.activeView === 'teacherView' && $('tLessonSelect') && $('tLessonSelect').value && $('tLessonSelect').value !== 'AUTO') {
+      lessonId = $('tLessonSelect').value;
+    } else {
+      lessonId = jamState.selectedLessonId || (jamState.activeClassState && jamState.activeClassState.lessonId) || '';
+    }
+  }
+
+  if (!studentCode && state.activeView === 'examinerView' && typeof exState !== 'undefined' && exState.selectedStudent && exState.selectedStudent.code) {
+    studentCode = exState.selectedStudent.code;
+  }
+
+  return {
+    teacher: teacher || 'ALL',
+    className: className || 'ALL',
+    lessonId: lessonId || '',
+    studentCode: String(studentCode || '').replace(/\D/g, '').trim()
+  };
+}
+
+function getAvailableQrStudentsForContext(ctx) {
+  const pool = (jamState.roster && jamState.roster.length)
+    ? jamState.roster
+    : ((typeof teacherState !== 'undefined' && teacherState.lastData && Array.isArray(teacherState.lastData.students))
+        ? teacherState.lastData.students
+        : []);
+  return pool.filter(st => {
+    if (!st || !st.code) return false;
+    if (ctx.className && ctx.className !== 'ALL' && st.className !== ctx.className) return false;
+    if (ctx.teacher && ctx.teacher !== 'ALL' && st.teacher !== ctx.teacher) return false;
+    return true;
+  });
+}
+
+function buildJamJoinQrUrl(ctx) {
+  const base = getCanonicalStudentJoinBaseUrl();
+  const params = new URLSearchParams();
+  params.set('jam', '1');
+  if (ctx.teacher && ctx.teacher !== 'ALL') params.set('teacher', ctx.teacher);
+  if (ctx.className && ctx.className !== 'ALL') params.set('class', ctx.className);
+  if (ctx.lessonId && ctx.lessonId !== 'AUTO') params.set('lesson', ctx.lessonId);
+  if (ctx.studentCode) params.set('code', ctx.studentCode);
+  const sep = base.includes('?') ? '&' : '?';
+  return base + sep + params.toString();
+}
+
+function refreshJamQrModalDisplay(ctx) {
+  const modal = $('jamQrModal');
+  const canvas = $('jamQrCanvas');
+  if (!modal || !canvas) return null;
+
+  const url = buildJamJoinQrUrl(ctx);
+  const isZoom = $('jamQrCard') && $('jamQrCard').classList.contains('zoom');
+  const stats = TtQrMatrixEngine.renderToCanvas(canvas, url, {
+    size: isZoom ? 440 : 320,
+    margin: 2,
+    colorDark: '#090d16',
+    colorLight: '#ffffff'
+  });
+
+  jamState.lastQrUrl = url;
+  jamState.lastQrStats = stats;
+  jamState.lastQrContext = ctx;
+
+  if ($('jamQrUrlInput')) $('jamQrUrlInput').value = url;
+
+  const students = getAvailableQrStudentsForContext(ctx);
+  const matchedStudent = ctx.studentCode
+    ? students.find(s => String(s.code) === String(ctx.studentCode)) ||
+      (jamState.roster || []).find(s => String(s.code) === String(ctx.studentCode))
+    : null;
+
+  const scopeParts = [];
+  if (ctx.className && ctx.className !== 'ALL') scopeParts.push('📚 ' + ctx.className);
+  else if (ctx.teacher && ctx.teacher !== 'ALL') scopeParts.push('👩‍🏫 Teacher ' + ctx.teacher);
+  else scopeParts.push('🌍 All Active Classes');
+
+  if (matchedStudent) {
+    $('jamQrBadge').textContent = '🎒 1-TAP STUDENT LOGIN QR';
+    $('jamQrTitle').textContent = matchedStudent.fullName + ' (#' + matchedStudent.code + ')';
+    $('jamQrSubtitle').textContent = 'Scan to log ' + (matchedStudent.firstName || matchedStudent.fullName) + ' straight into class with ZERO typing!';
+    if ($('jamQrScopeChip')) $('jamQrScopeChip').textContent = scopeParts.join(' · ') + ' · Code #' + matchedStudent.code;
+    if ($('jamQrPinBadge')) {
+      $('jamQrPinBadge').classList.remove('hidden');
+      $('jamQrPinBadge').textContent = '🪪 4-Digit Student Code: #' + matchedStudent.code + ' (Auto-logs in on scan!)';
+    }
+  } else {
+    $('jamQrBadge').textContent = '📱 LIVE CLASS JOIN QR';
+    $('jamQrTitle').textContent = (ctx.className && ctx.className !== 'ALL')
+      ? ('Join ' + ctx.className)
+      : ((ctx.teacher && ctx.teacher !== 'ALL') ? ('Join Teacher ' + ctx.teacher + '’s Class') : 'Scan to Join Live Class');
+    $('jamQrSubtitle').textContent = 'Students scan with their iPad or phone camera and tap their name (or type their 4-digit code)';
+    if ($('jamQrScopeChip')) {
+      $('jamQrScopeChip').textContent = scopeParts.join(' · ') + (students.length ? (' · ' + students.length + ' Students') : '');
+    }
+    if ($('jamQrPinBadge')) {
+      $('jamQrPinBadge').classList.add('hidden');
+    }
+  }
+
+  return { url, stats, ctx };
+}
+
+function openJamQrModal(opts) {
+  opts = opts || {};
+  hydrateJamStateFromLocalCache();
+  const ctx = getEffectiveTeacherQrContext(opts);
+  const modal = $('jamQrModal');
+  if (!modal) return null;
+
+  const sel = $('jamQrStudentSelect');
+  if (sel) {
+    clearEl(sel);
+    const wholeOpt = el('option', '🌍 Whole Class Join QR (Students pick their name or type 4-digit code)');
+    wholeOpt.value = '';
+    sel.appendChild(wholeOpt);
+
+    const students = getAvailableQrStudentsForContext(ctx);
+    students.forEach(st => {
+      const o = el('option', '🎒 ' + st.fullName + ' (#' + st.code + ')' + (st.className ? (' · ' + st.className) : ''));
+      o.value = st.code;
+      sel.appendChild(o);
+    });
+    sel.value = ctx.studentCode || '';
+  }
+
+  modal.classList.remove('hidden');
+  return refreshJamQrModalDisplay(ctx);
+}
+window.openJamQrModal = openJamQrModal;
+
+function closeJamQrModal() {
+  if ($('jamQrModal')) $('jamQrModal').classList.add('hidden');
+}
+
+// Dynamically attach Share QR button inside Jigsaw & Breakout Studio (#jigsawStudioView) and Examiner Bar (#examinerBar)
+function ensureAllTeacherViewsHaveQrButtons() {
+  const jsTopControls = document.querySelector('#jigsawStudioView .t-bar-top .t-controls');
+  if (jsTopControls && !document.getElementById('jsShareQrBtn')) {
+    const btn = el('button', '📱 Share Class QR', 'jigsaw-cta-btn jam-qr-cta');
+    btn.type = 'button';
+    btn.id = 'jsShareQrBtn';
+    btn.title = 'Show Scannable Class QR Code for Students';
+    btn.addEventListener('click', () => openJamQrModal({ source: 'jigsawStudio' }));
+    jsTopControls.insertBefore(btn, jsTopControls.firstChild);
+  }
+
+  const exModes = document.querySelector('#examinerBar .examiner-bar-modes');
+  if (exModes && !document.getElementById('exBarQrBtn')) {
+    const btn = el('button', '📱 Student QR', 'ex-mode-pill');
+    btn.type = 'button';
+    btn.id = 'exBarQrBtn';
+    btn.title = 'Show Scannable QR Code for Selected Student or Class';
+    btn.addEventListener('click', () => openJamQrModal({ source: 'examiner' }));
+    exModes.appendChild(btn);
+  }
+}
+try { ensureAllTeacherViewsHaveQrButtons(); } catch (e) {}
+
+if ($('jamShareQrBtn')) {
+  $('jamShareQrBtn').addEventListener('click', () => openJamQrModal({ source: 'jam' }));
+}
+if ($('jamCodesOpenQrBtn')) {
+  $('jamCodesOpenQrBtn').addEventListener('click', () => openJamQrModal({ source: 'jamCodes' }));
+}
+if ($('jamBarQrBtn')) {
+  $('jamBarQrBtn').addEventListener('click', () => openJamQrModal({ source: 'jamBar' }));
+}
+if ($('tShareQrBtn')) {
+  $('tShareQrBtn').addEventListener('click', () => openJamQrModal({ source: 'teacherRadar' }));
+}
+if ($('jamQrCloseBtn')) {
+  $('jamQrCloseBtn').addEventListener('click', closeJamQrModal);
+}
+if ($('jamQrModal')) {
+  $('jamQrModal').addEventListener('click', e => {
+    if (e.target && e.target.id === 'jamQrModal') closeJamQrModal();
+  });
+}
+if ($('jamQrFullscreenBtn')) {
+  $('jamQrFullscreenBtn').addEventListener('click', () => {
+    const card = $('jamQrCard');
+    if (!card) return;
+    card.classList.toggle('zoom');
+    if (jamState.lastQrContext) refreshJamQrModalDisplay(jamState.lastQrContext);
+  });
+}
+if ($('jamQrStudentSelect')) {
+  $('jamQrStudentSelect').addEventListener('change', e => {
+    const nextCtx = Object.assign({}, jamState.lastQrContext || getEffectiveTeacherQrContext({}), {
+      studentCode: e.target.value || ''
+    });
+    refreshJamQrModalDisplay(nextCtx);
+  });
+}
+if ($('jamQrCopyBtn')) {
+  $('jamQrCopyBtn').addEventListener('click', async () => {
+    const url = (jamState.lastQrUrl || ($('jamQrUrlInput') && $('jamQrUrlInput').value) || '').trim();
+    if (!url) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else if ($('jamQrUrlInput')) {
+        $('jamQrUrlInput').select();
+        document.execCommand('copy');
+      }
+      showToast('📋 Copied Class Join Link to clipboard!');
+    } catch (e) {
+      showToast('📋 Link ready to copy: ' + url);
+    }
+  });
+}
+if ($('jamQrOpenTabBtn')) {
+  $('jamQrOpenTabBtn').addEventListener('click', () => {
+    const url = (jamState.lastQrUrl || ($('jamQrUrlInput') && $('jamQrUrlInput').value) || '').trim();
+    if (url) window.open(url, '_blank', 'noopener');
+  });
+}
+if ($('jamQrDownloadBtn')) {
+  $('jamQrDownloadBtn').addEventListener('click', () => {
+    const canvas = $('jamQrCanvas');
+    if (!canvas || typeof canvas.toDataURL !== 'function') return;
+    const a = document.createElement('a');
+    const ctx = jamState.lastQrContext || {};
+    const slug = (ctx.studentCode || ctx.className || ctx.teacher || 'TalkToday_Class').replace(/[^a-zA-Z0-9_-]+/g, '_');
+    a.download = 'TalkToday_QR_' + slug + '.png';
+    a.href = canvas.toDataURL('image/png');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast('⬇️ Downloaded QR Code PNG!');
+  });
+}
+
+// Start login polling & QR deep-link detection immediately on boot
 startJamLoginPolling();
+applyQrDeepLinkOnLoginScreen();
 
 
 /* ---------- Jigsaw Step 2 Spoken Voice Clue Recorder Listeners ---------- */

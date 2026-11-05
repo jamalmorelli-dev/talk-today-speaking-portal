@@ -10777,14 +10777,15 @@ function closeJamQrModal() {
 
 // Dynamically attach Share QR button inside Jigsaw & Breakout Studio (#jigsawStudioView) and Examiner Bar (#examinerBar)
 function ensureAllTeacherViewsHaveQrButtons() {
-  const jsTopControls = document.querySelector('#jigsawStudioView .t-bar-top .t-controls');
-  if (jsTopControls && !document.getElementById('jsShareQrBtn')) {
-    const btn = el('button', '📱 Share Class QR', 'jigsaw-cta-btn jam-qr-cta');
+  const jsTopTabs = document.querySelector('#jigsawStudioView .t-bar-top .j-subtabs') ||
+    document.querySelector('#jigsawStudioView .t-bar-top .t-controls');
+  if (jsTopTabs && !document.getElementById('jsShareQrBtn')) {
+    const btn = el('button', '📱 Share Class QR', 'j-subtab jam-qr-cta');
     btn.type = 'button';
     btn.id = 'jsShareQrBtn';
     btn.title = 'Show Scannable Class QR Code for Students';
     btn.addEventListener('click', () => openJamQrModal({ source: 'jigsawStudio' }));
-    jsTopControls.insertBefore(btn, jsTopControls.firstChild);
+    jsTopTabs.insertBefore(btn, jsTopTabs.firstChild);
   }
 
   const exModes = document.querySelector('#examinerBar .examiner-bar-modes');
